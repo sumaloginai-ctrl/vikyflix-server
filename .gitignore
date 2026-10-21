@@ -1,0 +1,16 @@
+node_modules/
+*.log
+cloudflared.exe
+*.bat
+*.vbs
+cache/posters/
+cache/*/*/
+cache/[0-9a-f]*
+cache/*.html
+cache/*.js
+cache/*.txt
+cache/mb_playinfo*.json
+cache/mb_filter*.json
+cache/mb_search*.json
+cache/detail_first.json
+.env

@@ -1,0 +1,10 @@
+{
+  "_comment": "Add or reorder origins if MovieBox moves domains. The server probes these (first live one wins) before every catalog rebuild. Keep entries as full origins like https://moviebox.ac",
+  "_mirrors": [
+    "https://moviebox.ac",
+    "https://moviebox.ph",
+    "https://moviebox.ng",
+    "https://moviebox.re",
+    "https://hifimove.io"
+  ]
+}
