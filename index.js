@@ -11,7 +11,7 @@ const { startHlsTranscode, stopMovieTranscodes, touchMovieTranscode, pruneCache,
 const { fetchMovieMetadata, getCachedMetadata, downloadAndCachePoster, inspectMediaTracks } = require('./metadata');
 const { searchOnlineSubtitles, downloadAndConvertSubtitle, srtToVtt } = require('./subtitles');
 const { recordHeartbeat, removeSession, getActiveSessions, getSystemMetrics, extractClientIp } = require('./sessions');
-const { fetchMovieBoxCatalog, findMovieBoxItem, searchMovieBox, resolveMovieBoxStream, fetchSeriesSeasons, enrichCardEditions, getMovieBoxCatalogSnapshot } = require('./moviebox');
+const { fetchMovieBoxCatalog, findMovieBoxItem, searchMovieBox, resolveMovieBoxStream, invalidateStreamCache, fetchSeriesSeasons, enrichCardEditions, getMovieBoxCatalogSnapshot } = require('./moviebox');
 
 const compression = require('compression');
 
@@ -665,9 +665,22 @@ app.get('/api/moviebox/stream/:id', async (req, res) => {
     };
     if (req.headers.range) upstreamHeaders.Range = req.headers.range;
 
-    const upstream = await fetch(targetStreamUrl, { headers: upstreamHeaders });
+    let upstream = await fetch(targetStreamUrl, { headers: upstreamHeaders });
     if (!upstream.ok && upstream.status !== 206) {
-      return res.status(502).json({ error: `Upstream responded ${upstream.status}` });
+      // If CDN token expired (401, 403, 410) or upstream hiccuped, invalidate cache and retry once with fresh URL
+      console.warn(`[MovieBox] Upstream returned ${upstream.status} for ${movie.title}, invalidating cache and retrying...`);
+      invalidateStreamCache(target.subjectId, seParam, epParam, req.query.res);
+      try {
+        const fresh = await resolveMovieBoxStream(target.subjectId, target.detailPath, seParam, epParam, req.query.res);
+        if (fresh && (fresh.url || fresh.streamUrl)) {
+          upstream = await fetch(fresh.url || fresh.streamUrl, { headers: upstreamHeaders });
+        }
+      } catch (retryErr) {
+        console.warn(`[MovieBox] Stream retry failed:`, retryErr.message);
+      }
+      if (!upstream.ok && upstream.status !== 206) {
+        return res.status(502).json({ error: `Upstream responded ${upstream.status}` });
+      }
     }
 
     const headers = {
@@ -903,25 +916,47 @@ app.get('/api/stream/:id/index.m3u8', (req, res) => {
   });
 });
 
-// Live Playback Heartbeat Ping (called by player every 10s)
-app.post('/api/stream/:id/ping', (req, res) => {
-  const movie = moviesDatabase.find(m => m.id === req.params.id);
-  const { sessionId, currentTime, quality, duration } = req.body || {};
+// Live Playback Heartbeat Ping (called by player every 8-10s)
+app.post('/api/stream/:id/ping', async (req, res) => {
+  const localMovie = moviesDatabase.find(m => m.id === req.params.id);
+  const { sessionId, currentTime, quality, duration, movieTitle, poster, isOnline, isSeries, season, episode } = req.body || {};
   const ip = extractClientIp(req);
   const userAgent = req.headers['user-agent'] || '';
 
-  touchMovieTranscode(req.params.id);
+  // Only touch local transcode timer if it's a local movie
+  if (localMovie) {
+    touchMovieTranscode(req.params.id);
+  }
+
+  let finalTitle = localMovie?.title || movieTitle;
+  let finalPoster = localMovie?.metadata?.poster || poster;
+  const isOnlineStream = isOnline || String(req.params.id).startsWith('mb_') || !localMovie;
+
+  if (!finalTitle && isOnlineStream) {
+    try {
+      const found = await findMovieBoxItem(req.params.id);
+      if (found?.movie) {
+        finalTitle = found.movie.title;
+        finalPoster = finalPoster || found.movie.poster;
+      }
+    } catch (e) {}
+  }
+
+  if (season && episode) {
+    finalTitle = `${finalTitle || 'Series'} (S${season}:E${episode})`;
+  }
 
   recordHeartbeat({
     sessionId: sessionId || `${ip}_${req.params.id}`,
     ip,
     userAgent,
     movieId: req.params.id,
-    movieTitle: movie?.title || 'Movie Stream',
-    poster: movie?.metadata?.poster || null,
+    movieTitle: finalTitle || (isOnlineStream ? 'Online Stream' : 'Movie Stream'),
+    poster: finalPoster || null,
     quality: quality || 'AUTO',
     currentTime: currentTime || 0,
-    duration: duration || movie?.duration || 0
+    duration: duration || localMovie?.duration || 0,
+    isOnline: isOnlineStream
   });
 
   res.json({ success: true, active: true });

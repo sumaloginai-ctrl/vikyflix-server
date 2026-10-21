@@ -44,7 +44,7 @@ function extractClientIp(req) {
 }
 
 // Record or update viewer heartbeat
-function recordHeartbeat({ sessionId, ip, userAgent, movieId, movieTitle, poster, quality, currentTime, duration }) {
+function recordHeartbeat({ sessionId, ip, userAgent, movieId, movieTitle, poster, quality, currentTime, duration, isOnline }) {
   const now = Date.now();
   const id = sessionId || `${ip}_${movieId}`;
 
@@ -60,6 +60,7 @@ function recordHeartbeat({ sessionId, ip, userAgent, movieId, movieTitle, poster
     quality: (quality || existing?.quality || 'auto').toUpperCase(),
     currentTime: Math.floor(currentTime || existing?.currentTime || 0),
     duration: Math.floor(duration || existing?.duration || 0),
+    isOnline: isOnline !== undefined ? Boolean(isOnline) : (existing?.isOnline || false),
     startedAt: existing?.startedAt || now,
     lastActive: now
   });

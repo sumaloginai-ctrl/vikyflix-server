@@ -32,7 +32,17 @@ try {
 }
 
 const streamCache = new Map();
-const STREAM_CACHE_TTL_MS = 15 * 60 * 1000;
+// Short TTL (2.5 mins) so CDN expiration signatures are refreshed proactively
+const STREAM_CACHE_TTL_MS = 2.5 * 60 * 1000;
+
+function invalidateStreamCache(subjectId, se = null, ep = null, wantRes = null) {
+  const isEpisode = se != null && ep != null;
+  const resTag = ['360', '480', '720', '1080'].includes(String(wantRes)) ? String(wantRes) : null;
+  const cacheKey = `${isEpisode ? `${subjectId}:${se}:${ep}` : subjectId}${resTag ? `@${resTag}` : ''}`;
+  streamCache.delete(cacheKey);
+  // Also delete base key
+  streamCache.delete(String(subjectId));
+}
 
 function loadHostCandidates() {
   try {
@@ -688,6 +698,7 @@ module.exports = {
   searchMovieBox,
   matchMovieBoxMetadata,
   resolveMovieBoxStream,
+  invalidateStreamCache,
   fetchSeriesSeasons,
   enrichCardEditions,
   getMovieBoxCatalogSnapshot,
