@@ -81,12 +81,19 @@ function clientToken() {
 
 function baseHeaders(host, extra = {}) {
   return {
-    'User-Agent': UA,
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
     'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'en-US,en;q=0.9',
     'Content-Type': 'application/json',
     'Origin': host,
     'Referer': `${host}/`,
     'X-Client-Token': clientToken(),
+    'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-origin',
     ...extra
   };
 }
@@ -102,7 +109,8 @@ async function getSession(host, forceNew = false) {
     const xUser = res.headers.get('x-user') || '';
     const setCookie = res.headers.get('set-cookie') || '';
     const token = xUser || (setCookie.match(/token=([^;]+)/) || [])[1] || '';
-    const entry = { token, cookie: setCookie, expiresAt: Date.now() + 2 * 60 * 60 * 1000 };
+    const cleanCookie = token ? `token=${token}` : '';
+    const entry = { token, cookie: cleanCookie, expiresAt: Date.now() + 2 * 60 * 60 * 1000 };
     sessionCache.set(host, entry);
     return entry;
   } catch (e) {
@@ -530,15 +538,25 @@ async function resolveMovieBoxStream(subjectId, detailPath, se = null, ep = null
     await bffFetch(`https://h5-api.aoneroom.com/wefeed-h5api-bff/detail?detailPath=${encodeURIComponent(detailPath)}`);
   } catch (e) {}
 
-  const playUrl = `${PLAY_HOST}/wefeed-h5api-bff/subject/play` +
-    `?subjectId=${encodeURIComponent(subjectId)}&se=${isEpisode ? se : 0}&ep=${isEpisode ? ep : 0}` +
-    `&detailPath=${encodeURIComponent(detailPath)}` +
-    `&streamSignType=1&supportCodecs%5Bhevc%5D=1&supportCodecs%5Bh264%5D=1`;
-  const referer = isEpisode
-    ? `${PLAY_HOST}/spa/videoPlayPage/series/${detailPath}?id=${subjectId}&se=${se}&ep=${ep}`
-    : `${PLAY_HOST}/spa/videoPlayPage/movies/${detailPath}?id=${subjectId}`;
-
-  const body = await bffFetch(playUrl, { headers: { Referer: referer } }, PLAY_HOST);
+  const playHosts = [PLAY_HOST, 'https://hifimove.io', 'https://moviebox.ph', 'https://moviebox.ac'];
+  let body = null;
+  let lastErr = null;
+  for (const host of playHosts) {
+    try {
+      const playUrl = `${host}/wefeed-h5api-bff/subject/play` +
+        `?subjectId=${encodeURIComponent(subjectId)}&se=${isEpisode ? se : 0}&ep=${isEpisode ? ep : 0}` +
+        `&detailPath=${encodeURIComponent(detailPath)}` +
+        `&streamSignType=1&supportCodecs%5Bhevc%5D=1&supportCodecs%5Bh264%5D=1`;
+      const referer = isEpisode
+        ? `${host}/spa/videoPlayPage/series/${detailPath}?id=${subjectId}&se=${se}&ep=${ep}`
+        : `${host}/spa/videoPlayPage/movies/${detailPath}?id=${subjectId}`;
+      body = await bffFetch(playUrl, { headers: { Referer: referer } }, host);
+      if (body && body.data && body.data.streams && body.data.streams.length) break;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (!body) throw lastErr || new Error('Stream request failed');
   const data = body && body.data;
   const streams = (data && data.streams) || [];
 
