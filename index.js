@@ -49,11 +49,15 @@ app.get('/api/poster/:hash', (req, res) => {
   return res.status(404).send('Poster not found');
 });
 
-// Direct 1-click download endpoint for VikyFlix Android APK
-app.get(['/download/app', '/vikyflix.apk', '/download'], (req, res) => {
-  const apkPath = path.join(__dirname, 'VikyFlix.apk');
-  if (fs.existsSync(apkPath)) {
-    return res.download(apkPath, 'VikyFlix.apk');
+// Direct 1-click download endpoint for MovieFlix Android APK
+app.get(['/download/app', '/movieflix.apk', '/vikyflix.apk', '/download'], (req, res) => {
+  const movieFlixPath = path.join(__dirname, 'MovieFlix.apk');
+  const vikyFlixPath = path.join(__dirname, 'VikyFlix.apk');
+  if (fs.existsSync(movieFlixPath)) {
+    return res.download(movieFlixPath, 'MovieFlix.apk');
+  }
+  if (fs.existsSync(vikyFlixPath)) {
+    return res.download(vikyFlixPath, 'MovieFlix.apk');
   }
   return res.status(404).send('APK not found on server');
 });
