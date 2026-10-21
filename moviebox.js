@@ -526,18 +526,57 @@ function getMovieBoxCatalogSnapshot() {
 
 const seriesResourceCache = new Map();
 
-async function fetchSeriesSeasons(detailPath) {
-  const cached = seriesResourceCache.get(detailPath);
+async function fetchSeriesSeasons(detailPathOrSubjectId) {
+  const raw = String(detailPathOrSubjectId || '').trim();
+  if (!raw) return [];
+  const cached = seriesResourceCache.get(raw);
   if (cached && (Date.now() - cached.fetchedAt) < 30 * 60 * 1000) return cached.seasons;
-  const body = await bffFetch(`https://h5-api.aoneroom.com/wefeed-h5api-bff/detail?detailPath=${encodeURIComponent(detailPath)}`);
+
+  const cleanSubjectId = raw.replace(/^mb_/, '');
+  const isSubjectId = /^\d+$/.test(cleanSubjectId);
+  const detailUrl = isSubjectId
+    ? `https://h5-api.aoneroom.com/wefeed-h5api-bff/detail?subjectId=${encodeURIComponent(cleanSubjectId)}`
+    : `https://h5-api.aoneroom.com/wefeed-h5api-bff/detail?detailPath=${encodeURIComponent(raw)}`;
+
+  let body = null;
+  try {
+    body = await bffFetch(detailUrl);
+  } catch (e) {
+    // If detailPath failed, try subjectId fallback if possible
+    if (!isSubjectId && cleanSubjectId && /^\d+$/.test(cleanSubjectId)) {
+      try {
+        body = await bffFetch(`https://h5-api.aoneroom.com/wefeed-h5api-bff/detail?subjectId=${encodeURIComponent(cleanSubjectId)}`);
+      } catch (e2) {}
+    }
+  }
+
   const res = (body && body.data && body.data.resource) || {};
   const seasons = Array.isArray(res.seasons) ? res.seasons.filter(s => s && s.maxEp > 0) : [];
-  seriesResourceCache.set(detailPath, { seasons, fetchedAt: Date.now() });
+  seriesResourceCache.set(raw, { seasons, fetchedAt: Date.now() });
   return seasons;
 }
 
 async function resolveMovieBoxStream(subjectId, detailPath, se = null, ep = null, wantRes = null) {
-  const isEpisode = se != null && ep != null;
+  let isEpisode = se != null && ep != null && Number(se) > 0 && Number(ep) > 0;
+  
+  // Auto-resolve missing detailPath or series status if not specified
+  if ((!detailPath || !isEpisode) && subjectId) {
+    try {
+      const cleanSubId = String(subjectId).replace(/^mb_/, '');
+      const info = await bffFetch(`https://h5-api.aoneroom.com/wefeed-h5api-bff/detail?subjectId=${encodeURIComponent(cleanSubId)}`);
+      if (info && info.data && info.data.subject) {
+        if (!detailPath && info.data.subject.detailPath) {
+          detailPath = info.data.subject.detailPath;
+        }
+        if (!isEpisode && info.data.subject.subjectType === 2) {
+          se = 1;
+          ep = 1;
+          isEpisode = true;
+        }
+      }
+    } catch (e) {}
+  }
+
   const resTag = ['360', '480', '720', '1080'].includes(String(wantRes)) ? String(wantRes) : null;
   const cacheKey = `${isEpisode ? `${subjectId}:${se}:${ep}` : subjectId}${resTag ? `@${resTag}` : ''}`;
   const cached = streamCache.get(cacheKey);

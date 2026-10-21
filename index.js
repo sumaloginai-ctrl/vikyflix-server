@@ -624,21 +624,17 @@ app.get('/api/moviebox/stream/:id', async (req, res) => {
     if (isSeriesTitle) {
       let seasons = [];
       try {
-        seasons = await fetchSeriesSeasons(target.detailPath);
+        seasons = await fetchSeriesSeasons(target.detailPath || target.subjectId);
       } catch (e) {
         console.warn(`[MovieBox] Season list failed for ${movie.title}:`, e.message);
       }
       let se = req.query.se ? parseInt(req.query.se, 10) : null;
       let ep = req.query.ep ? parseInt(req.query.ep, 10) : null;
-      if ((se == null || ep == null) && seasons.length) {
-        const first = seasons[0];
-        se = se == null ? first.se : se;
-        ep = ep == null ? 1 : ep;
-      }
-      if (se != null && ep != null) {
-        seParam = se;
-        epParam = ep;
-      }
+      if (se == null && seasons.length) se = seasons[0].se;
+      if (se == null) se = 1;
+      if (ep == null) ep = 1;
+      seParam = se;
+      epParam = ep;
     }
 
     let resolved;
