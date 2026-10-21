@@ -800,10 +800,6 @@ app.post('/api/movies/:id/subtitles/download', async (req, res) => {
     res.status(500).json({ error: 'Failed to download subtitle', details: err.message });
   }
 });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to download subtitle', details: err.message });
-  }
-});
 
 // Custom Subtitle Upload / Import Endpoint
 app.post('/api/movies/:id/subtitles/upload', (req, res) => {
