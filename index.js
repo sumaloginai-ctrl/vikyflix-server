@@ -757,10 +757,10 @@ app.get('/api/movies/:id/subtitles/:index.vtt', (req, res) => {
 // Search Online Subtitles
 app.get('/api/movies/:id/subtitles/online', async (req, res) => {
   const movie = moviesDatabase.find(m => m.id === req.params.id);
-  if (!movie) return res.status(404).json({ error: 'Movie not found' });
+  const queryTitle = req.query.query || movie?.title;
+  const queryYear = req.query.year || movie?.year;
 
-  const queryTitle = req.query.query || movie.title;
-  const queryYear = req.query.year || movie.year;
+  if (!queryTitle) return res.status(400).json({ error: 'Title required for search' });
 
   try {
     const subtitles = await searchOnlineSubtitles(queryTitle, queryYear);
@@ -772,16 +772,15 @@ app.get('/api/movies/:id/subtitles/online', async (req, res) => {
 
 // Download Online Subtitle
 app.post('/api/movies/:id/subtitles/download', async (req, res) => {
-  const movie = moviesDatabase.find(m => m.id === req.params.id);
-  if (!movie) return res.status(404).json({ error: 'Movie not found' });
-
   const { sourceUrl, lang, name } = req.body;
   if (!sourceUrl) return res.status(400).json({ error: 'sourceUrl required' });
 
   try {
     const subHash = crypto.createHash('md5').update(sourceUrl).digest('hex').substring(0, 10);
     const vttFilename = `online_${subHash}.vtt`;
-    const targetVttPath = path.join(CACHE_DIR, movie.id, vttFilename);
+    const targetDir = path.join(CACHE_DIR, req.params.id);
+    if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+    const targetVttPath = path.join(targetDir, vttFilename);
 
     if (!fs.existsSync(targetVttPath)) {
       await downloadAndConvertSubtitle(sourceUrl, targetVttPath);
@@ -789,10 +788,14 @@ app.post('/api/movies/:id/subtitles/download', async (req, res) => {
 
     res.json({
       success: true,
-      vttUrl: `/api/movies/${movie.id}/subtitles/custom/${vttFilename}`,
+      vttUrl: `/api/movies/${req.params.id}/subtitles/custom/${vttFilename}`,
       label: `${lang || 'Online'} Subtitle`,
       name: name || `${lang} Subtitle`
     });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to download subtitle', details: err.message });
+  }
+});
   } catch (err) {
     res.status(500).json({ error: 'Failed to download subtitle', details: err.message });
   }
