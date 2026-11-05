@@ -1,0 +1,51 @@
+# Root ignore rules. Subfolders have their own .gitignore too.
+
+# Dependencies and build output
+node_modules/
+web/dist/
+web/dist-ssr/
+web/android/app/build/
+web/android/build/
+web/android/.gradle/
+web/android/local.properties
+
+# Runtime data and logs
+server/cache/
+*.log
+*.tmp
+
+# Secrets and signing material
+.env
+.env.*
+!.env.example
+*.jks
+*.keystore
+*.p12
+vikyflix-release*
+*password*.txt
+server/cloudflared.exe
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Release binaries — currently served from the PC by /download*.
+# Remove these three lines if you decide to commit APKs/IPKs (e.g. so the
+# Render fallback can serve OTA downloads while the PC is off).
+*.apk
+*.ipk
+*.aab
+
+# --- Repositories are split on purpose -----------------------------------
+# Backend + release artifacts live in the `server/` git repo (GitHub `main`).
+# Frontend lives in the `web/` git repo (GitHub branch `web`).
+# This root repo only tracks the agent workflow: AGENTS.md, Skills/, docs/,
+# scripts/ and this file (GitHub branch `workspace`).
+server/
+web/
+backups/
+promo/
+.ui-shots/

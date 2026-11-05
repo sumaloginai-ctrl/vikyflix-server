@@ -1,0 +1,15 @@
+{
+  "id": "uk.vikyflix.tv",
+  "version": "1.0.0",
+  "vendor": "VikyFlix",
+  "type": "web",
+  "main": "index.html",
+  "title": "VikyFlix",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "bgImage": "bgImage.png",
+  "resolution": "1920x1080",
+  "transparent": false,
+  "handlesRelaunch": true,
+  "requiredACG": []
+}

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VikyFlix</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: #0b0c10;
+      color: #ffffff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+    .logo {
+      font-size: 3.5rem;
+      font-weight: 800;
+      letter-spacing: 3px;
+      margin-bottom: 1.5rem;
+      background: linear-gradient(135deg, #e50914, #ff5e62);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #e50914;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 1.5rem;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .status {
+      font-size: 1.25rem;
+      color: #9aa0a6;
+      margin-bottom: 1.5rem;
+    }
+    .retry-btn {
+      display: none;
+      padding: 14px 28px;
+      background: #e50914;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      cursor: pointer;
+      outline: none;
+    }
+    .retry-btn:focus, .retry-btn:hover {
+      background: #f40612;
+      box-shadow: 0 0 15px rgba(229, 9, 20, 0.6);
+    }
+  </style>
+</head>
+<body>
+  <div class="logo">VIKYFLIX</div>
+  <div class="spinner"></div>
+  <div class="status" id="status">Connecting to VikyFlix...</div>
+  <button class="retry-btn" id="retryBtn" onclick="connect()">Retry Connection</button>
+
+  <script>
+    const TARGET_URL = 'https://vikyflix.uk';
+    function connect() {
+      document.getElementById('status').innerText = 'Connecting to VikyFlix...';
+      document.getElementById('retryBtn').style.display = 'none';
+      window.location.replace(TARGET_URL);
+    }
+    connect();
+    setTimeout(() => {
+      document.getElementById('status').innerText = 'Taking longer than usual? Check your TV internet connection.';
+      document.getElementById('retryBtn').style.display = 'block';
+      document.getElementById('retryBtn').focus();
+    }, 7000);
+  </script>
+</body>
+</html>
