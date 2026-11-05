@@ -73,8 +73,14 @@ function loadState() {
   return state;
 }
 
+function windowAnchor(sigState) {
+  const times = sigState.times || [];
+  return times.length ? Math.max.apply(null, times) : Date.now();
+}
+
 function verdictFor(sigState) {
-  const recent = (sigState.times || []).filter(t => Date.now() - t <= WINDOW_MS);
+  const anchor = windowAnchor(sigState);
+  const recent = (sigState.times || []).filter(t => anchor - t <= WINDOW_MS);
   const isP0 = P0_PREFIX.includes(`${sigState.cls}|${sigState.kind}`);
   if (isP0) return { open: true, sev: 'P0', reason: 'p0-class' };
   if (recent.length >= THRESHOLD) return { open: true, sev: 'P2', reason: `${recent.length}-in-15min` };
@@ -152,7 +158,7 @@ function ingestLine(line, state, counters) {
     sev: verdict.sev,
     reason: verdict.reason,
     count: sigState.count,
-    windowCount: (sigState.times || []).filter(t => Date.now() - t <= WINDOW_MS).length,
+    windowCount: (sigState.times || []).filter(t => windowAnchor(sigState) - t <= WINDOW_MS).length,
     firstSeen: sigState.firstSeen,
     lastSeen: sigState.lastSeen,
     platforms: sigState.platforms,
