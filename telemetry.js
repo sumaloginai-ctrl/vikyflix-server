@@ -38,7 +38,8 @@ const CLASSES = new Set([
 // Only these fields may leave a device. Everything else is dropped.
 const FIELDS = [
   'cls', 'kind', 'code', 'route', 'msg', 'platform', 'appVersion',
-  'versionCode', 'mediaId', 'se', 'ep', 'res', 'src', 'detail', 'sessionId'
+  'versionCode', 'mediaId', 'se', 'ep', 'res', 'src', 'detail', 'sessionId',
+  'installId'
 ];
 
 const rateBuckets = new Map(); // ip -> { minute, count }
@@ -96,6 +97,14 @@ function sanitizeEvent(raw) {
     if (key === 'se' || key === 'ep' || key === 'res' || key === 'versionCode') {
       const n = pickNumber(raw[key]);
       if (n !== undefined) event[key] = n;
+      continue;
+    }
+    if (key === 'installId') {
+      // Anonymous random per-install id only — never a name/email/IP. Reject
+      // anything that does not look like a generated id so users cannot smuggle
+      // personal data in through this field.
+      const id = String(raw[key] || '');
+      if (/^[A-Za-z0-9-]{8,64}$/.test(id)) event.installId = id;
       continue;
     }
     if (key === 'msg' || key === 'detail') {
@@ -175,7 +184,7 @@ function trackIncident(event) {
     const now = Date.parse(event.ts) || Date.now();
     let stat = sigStats.get(sig);
     if (!stat) {
-      stat = { count: 0, times: [], firstSeen: event.ts, lastSeen: event.ts, platforms: {}, versions: {}, samples: [] };
+      stat = { count: 0, times: [], firstSeen: event.ts, lastSeen: event.ts, platforms: {}, versions: {}, installs: {}, samples: [] };
       sigStats.set(sig, stat);
     }
     stat.count++;
@@ -187,8 +196,9 @@ function trackIncident(event) {
     stat.platforms[platform] = (stat.platforms[platform] || 0) + 1;
     const version = String(event.appVersion || event.versionCode || 'unknown');
     stat.versions[version] = (stat.versions[version] || 0) + 1;
+    if (event.installId) stat.installs[event.installId] = (stat.installs[event.installId] || 0) + 1;
     if (stat.samples.length < 3) {
-      stat.samples.push({ ts: event.ts, cls: event.cls, kind: event.kind, code: event.code, route: event.route, msg: event.msg, platform, appVersion: event.appVersion, mediaId: event.mediaId, src: event.src });
+      stat.samples.push({ ts: event.ts, cls: event.cls, kind: event.kind, code: event.code, route: event.route, msg: event.msg, platform, appVersion: event.appVersion, mediaId: event.mediaId, installId: event.installId, src: event.src });
     }
 
     const windowCount = stat.times.filter(t => now - t <= WINDOW_MS).length;
@@ -212,6 +222,8 @@ function trackIncident(event) {
       lastSeen: stat.lastSeen,
       platforms: stat.platforms,
       versions: stat.versions,
+      installs: Object.keys(stat.installs).length,
+      installIds: Object.keys(stat.installs).slice(0, 5),
       samples: stat.samples,
       status: existing && existing.status ? existing.status : 'new',
       createdAt: existing && existing.createdAt ? existing.createdAt : new Date().toISOString(),

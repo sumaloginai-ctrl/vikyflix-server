@@ -106,6 +106,7 @@ function ingestLine(line, state, counters) {
       times: [],
       platforms: {},
       versions: {},
+      installs: {},
       samples: []
     };
   }
@@ -119,6 +120,7 @@ function ingestLine(line, state, counters) {
   sigState.platforms[platform] = (sigState.platforms[platform] || 0) + 1;
   const version = String(event.appVersion || event.versionCode || 'unknown');
   sigState.versions[version] = (sigState.versions[version] || 0) + 1;
+  if (event.installId) sigState.installs[event.installId] = (sigState.installs[event.installId] || 0) + 1;
 
   if (sigState.samples.length < MAX_SAMPLES) {
     sigState.samples.push({
@@ -131,6 +133,7 @@ function ingestLine(line, state, counters) {
       platform,
       appVersion: event.appVersion,
       mediaId: event.mediaId,
+      installId: event.installId,
       src: event.src
     });
   }
@@ -154,6 +157,8 @@ function ingestLine(line, state, counters) {
     lastSeen: sigState.lastSeen,
     platforms: sigState.platforms,
     versions: sigState.versions,
+    installs: Object.keys(sigState.installs || {}).length,
+    installIds: Object.keys(sigState.installs || {}).slice(0, 5),
     samples: sigState.samples,
     status: existing && existing.status ? existing.status : 'new',
     createdAt: existing && existing.createdAt ? existing.createdAt : new Date().toISOString(),
