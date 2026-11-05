@@ -107,7 +107,7 @@ function scanSingleDir(dirPath, libraryName) {
             filePath: fullPath,
             library: libraryName || path.basename(dirPath),
             size: stat.size,
-            addedAt: stat.mtimeMs || stat.birthtimeMs || Date.now(),
+            addedAt: Math.max(stat.mtimeMs || 0, stat.ctimeMs || 0, stat.birthtimeMs || 0) || Date.now(),
             duration: 0,
             formattedDuration: null,
             streamUrl: `/api/stream/${id}/index.m3u8`,

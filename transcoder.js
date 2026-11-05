@@ -425,7 +425,9 @@ function isMovieActive(movieId) {
 function pruneCache(cacheDir, maxBytes) {
   try {
     if (!fs.existsSync(cacheDir)) return;
-    const dirs = fs.readdirSync(cacheDir, { withFileTypes: true }).filter(d => d.isDirectory());
+    const PROTECTED_CACHE_DIRS = new Set(['posters', 'subtitles', 'metadata', 'data']);
+    const dirs = fs.readdirSync(cacheDir, { withFileTypes: true })
+      .filter(d => d.isDirectory() && !PROTECTED_CACHE_DIRS.has(d.name));
     const items = dirs.map(d => {
       const full = path.join(cacheDir, d.name);
       const info = dirSizeInfo(full);

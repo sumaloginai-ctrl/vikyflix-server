@@ -6,18 +6,34 @@ const crypto = require('crypto');
 const { Readable } = require('stream');
 require('dotenv').config();
 
-const { scanMediaDirs, groupSeries } = require('./scanner');
-const { startHlsTranscode, stopMovieTranscodes, touchMovieTranscode, pruneCache, generateLocalThumbnail, extractSubtitleTrack } = require('./transcoder');
-const { fetchMovieMetadata, getCachedMetadata, downloadAndCachePoster, inspectMediaTracks } = require('./metadata');
+const { pruneCache } = require('./transcoder');
 const { searchOnlineSubtitles, downloadAndConvertSubtitle, srtToVtt } = require('./subtitles');
-const { recordHeartbeat, removeSession, getActiveSessions, getSystemMetrics, extractClientIp } = require('./sessions');
-const { fetchMovieBoxCatalog, findMovieBoxItem, searchMovieBox, resolveMovieBoxStream, invalidateStreamCache, fetchSeriesSeasons, enrichCardEditions, getMovieBoxCatalogSnapshot } = require('./moviebox');
+const { fetchMovieBoxCatalog, refreshLatestReleases, refreshLatestFeed, findMovieBoxItem, searchMovieBox, resolveMovieBoxStream, invalidateStreamCache, fetchSeriesSeasons, enrichCardEditions, enrichEditionSweep, getMovieBoxCatalogSnapshot, getMovieBoxCatalogMeta } = require('./moviebox');
 
 const compression = require('compression');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const rawMediaDirs = process.env.MEDIA_DIRS || process.env.MEDIA_DIR || 'E:/Downloaded Movie,F:/Recent Movies';
+
+// Timestamped logs — the raw console lines made incidents impossible to
+// correlate with real time.
+{
+  const _log = console.log;
+  console.log = (...a) => _log(new Date().toISOString(), ...a);
+  const _warn = console.warn;
+  console.warn = (...a) => _warn(new Date().toISOString(), ...a);
+}
+
+// Control endpoints (library rescan, catalog refresh) trigger expensive
+// work — gate them behind a shared key so random internet traffic cannot
+// use the public tunnel to hammer MovieBox or the server.
+const ADMIN_KEY = process.env.ADMIN_KEY || 'movieflix-admin-2026';
+function requireAdmin(req, res, next) {
+  const key = String(req.headers['x-admin-key'] || req.query.admin || '');
+  if (key === ADMIN_KEY) return next();
+  return res.status(401).json({ error: 'Unauthorized' });
+}
+const rawMediaDirs = process.env.MEDIA_DIRS || process.env.MEDIA_DIR || '';
 const MEDIA_DIRS = rawMediaDirs.split(',').map(s => s.trim()).filter(Boolean);
 const CACHE_DIR = process.env.CACHE_DIR || path.join(__dirname, 'cache');
 const POSTERS_DIR = path.join(CACHE_DIR, 'posters');
@@ -27,17 +43,49 @@ if (!fs.existsSync(POSTERS_DIR)) {
   fs.mkdirSync(POSTERS_DIR, { recursive: true });
 }
 
-// Cap the transcode cache so it can never fill the disk again (was 157 GB!).
-// Override with CACHE_MAX_GB in .env. Prune on startup and every 10 minutes.
-const CACHE_MAX_BYTES = (parseFloat(process.env.CACHE_MAX_GB) || 15) * 1e9;
-pruneCache(CACHE_DIR, CACHE_MAX_BYTES);
-setInterval(() => pruneCache(CACHE_DIR, CACHE_MAX_BYTES), 10 * 60 * 1000);
+// Clean any leftover transcode cache to keep PC disk free
+if (fs.existsSync(CACHE_DIR)) {
+  const CACHE_MAX_BYTES = (parseFloat(process.env.CACHE_MAX_GB) || 2) * 1e9;
+  pruneCache(CACHE_DIR, CACHE_MAX_BYTES);
+  setInterval(() => pruneCache(CACHE_DIR, CACHE_MAX_BYTES), 10 * 60 * 1000);
+}
 
 app.use(compression());
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
 
 // High-speed local poster cache delivery with immutable 1-year browser cache
+// --- Poster variant queue (bounded concurrency, async) ---
+const posterVariantQueue = [];
+let posterVariantRunning = 0;
+const POSTER_VARIANT_MAX = 2;
+
+function queuePosterVariant(srcFile, outFile, width) {
+  if (posterVariantQueue.some(j => j.outFile === outFile)) return;
+  posterVariantQueue.push({ srcFile, outFile, width });
+  drainPosterVariants();
+}
+
+function drainPosterVariants() {
+  while (posterVariantRunning < POSTER_VARIANT_MAX && posterVariantQueue.length) {
+    const job = posterVariantQueue.shift();
+    if (fs.existsSync(job.outFile)) continue;
+    posterVariantRunning++;
+    try {
+      const { spawn } = require('child_process');
+      const bin = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+      const child = spawn(bin, ['-y', '-loglevel', 'error', '-i', job.srcFile,
+        '-vf', `scale=${job.width}:-2:flags=lanczos`, '-q:v', '4', job.outFile],
+        { stdio: 'ignore' });
+      const done = () => { posterVariantRunning--; drainPosterVariants(); };
+      child.on('error', done);
+      child.on('close', done);
+    } catch (e) {
+      posterVariantRunning--;
+    }
+  }
+}
+
 app.get('/api/poster/:hash', (req, res) => {
   const hash = (req.params.hash || '').replace(/[^a-f0-9]/gi, '');
   const localFile = path.join(POSTERS_DIR, `${hash}.jpg`);
@@ -51,15 +99,75 @@ app.get('/api/poster/:hash', (req, res) => {
 
 // Direct 1-click download endpoint for MovieFlix Android APK
 app.get(['/download/app', '/movieflix.apk', '/vikyflix.apk', '/download'], (req, res) => {
-  const movieFlixPath = path.join(__dirname, 'MovieFlix.apk');
-  const vikyFlixPath = path.join(__dirname, 'VikyFlix.apk');
-  if (fs.existsSync(movieFlixPath)) {
-    return res.download(movieFlixPath, 'MovieFlix.apk');
-  }
-  if (fs.existsSync(vikyFlixPath)) {
-    return res.download(vikyFlixPath, 'MovieFlix.apk');
+  const rootMovieFlix = path.join(__dirname, '..', 'MovieFlix.apk');
+  const serverMovieFlix = path.join(__dirname, 'MovieFlix.apk');
+  const apkPath = fs.existsSync(rootMovieFlix) ? rootMovieFlix : serverMovieFlix;
+  if (fs.existsSync(apkPath)) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    return res.download(apkPath, 'MovieFlix.apk');
   }
   return res.status(404).send('APK not found on server');
+});
+
+// App version & update manifest endpoint.
+// ?platform=tv serves the dedicated Android TV app's track; the default
+// (mobile) track serves the phone app. The two are separate installs
+// (uk.vikyflix.app / uk.vikyflix.tv) and must never cross-update.
+app.get('/api/app/version', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  const isTv = req.query.platform === 'tv';
+  const apkNames = isTv ? ['MovieFlixTV.apk', 'MovieFlixTv.apk'] : ['MovieFlix.apk'];
+  let apkPath = null;
+  for (const name of apkNames) {
+    const root = path.join(__dirname, '..', name);
+    const local = path.join(__dirname, name);
+    if (fs.existsSync(root)) { apkPath = root; break; }
+    if (fs.existsSync(local)) { apkPath = local; break; }
+  }
+  const stats = apkPath ? fs.statSync(apkPath) : null;
+  const apkSha256 = apkPath ? crypto.createHash('sha256').update(fs.readFileSync(apkPath)).digest('hex') : null;
+  res.json({
+    versionCode: 66,
+    versionName: '2.9.9',
+    packageName: isTv ? 'uk.vikyflix.tv' : 'uk.vikyflix.app',
+    apkUrl: isTv ? 'https://vikyflix.uk/download/tv' : 'https://vikyflix.uk/download',
+    apkSha256,
+    fileSize: stats?.size || 5501048,
+    releaseDate: stats?.mtime?.toISOString() || new Date().toISOString(),
+    releaseNotes: isTv
+      ? 'MovieFlix TV — dedicated Android TV app built for remote navigation.'
+      : 'Phone layout pass: cleaner two-row filters, a readable section header, two-line card titles and no more clipped text on rails.'
+  });
+});
+
+// Share build: identical app without REQUEST_INSTALL_PACKAGES — the one
+// permission Play Protect uses to show the blocking "harmful app" screen.
+// Send this link to other people; in-app updates fall back to the browser.
+app.get(['/download/share', '/movieflix-share.apk'], (req, res) => {
+  const candidates = [
+    path.join(__dirname, '..', 'MovieFlix-Share.apk'),
+    path.join(__dirname, 'MovieFlix-Share.apk')
+  ];
+  const shared = candidates.find(p => fs.existsSync(p));
+  if (shared) return res.download(shared, 'MovieFlix-Share.apk');
+  return res.status(404).send('Share build not found');
+});
+
+// Android TV APK download (MovieFlix TV, uk.vikyflix.tv)
+app.get(['/download/tv', '/movieflixtv.apk'], (req, res) => {
+  const candidates = [
+    path.join(__dirname, '..', 'MovieFlixTV.apk'),
+    path.join(__dirname, 'MovieFlixTV.apk'),
+    path.join(__dirname, 'MovieFlixTv.apk')
+  ];
+  const tvPath = candidates.find(p => fs.existsSync(p));
+  if (tvPath) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    return res.download(tvPath, 'MovieFlixTV.apk');
+  }
+  return res.status(404).send('MovieFlix TV APK not found on server');
 });
 
 // Direct download endpoint for LG webOS Smart TV package (.ipk)
@@ -80,6 +188,13 @@ app.use('/api/stream', (req, res, next) => {
   next();
 });
 
+// Serve promotional media kit and marketing assets (/promo)
+const PROMO_DIR = path.join(__dirname, '..', 'promo');
+if (fs.existsSync(PROMO_DIR)) {
+  console.log(`[Server] Serving promotional media kit from: ${PROMO_DIR}`);
+  app.use('/promo', express.static(PROMO_DIR));
+}
+
 // Serve frontend static assets with aggressive caching for hashed assets and fresh index.html
 if (fs.existsSync(WEB_DIST)) {
   console.log(`[Server] Serving frontend build from: ${WEB_DIST}`);
@@ -96,191 +211,69 @@ if (fs.existsSync(WEB_DIST)) {
   }));
 }
 
-let moviesDatabase = [];
-let seriesDatabase = [];
-let refreshPromise = null;
-let scanTimeout = null;
-let isRefreshing = false;
 
-async function refreshLibrary() {
-  if (refreshPromise) return refreshPromise;
-  refreshPromise = (async () => {
-    try {
-      console.log(`[Server] Scanning media directories:`, MEDIA_DIRS);
-      const scanned = scanMediaDirs(MEDIA_DIRS);
+// Immediate initial sync for latest online releases + standing 20-minute interval
+setTimeout(() => {
+  refreshLatestReleases(15).catch(() => {});
+  refreshLatestFeed(5).catch(() => {});
+}, 3000);
 
-      const updatedDatabase = scanned.map(item => {
-        const cached = getCachedMetadata(`${item.title.toLowerCase()}_${item.year || ''}`) || getCachedMetadata(`${item.title.toLowerCase()}_`);
-        if (cached) {
-          item.metadata = cached;
-        }
-        return item;
-      });
+// Standing automated background online catalog refresh every 20 minutes
+setInterval(() => {
+  refreshLatestReleases(15).catch(err => console.warn('[MovieBox] Automated background sync error:', err.message));
+}, 20 * 60 * 1000);
 
-      const updatedSeries = groupSeries(updatedDatabase);
-      
-      // Update in-memory state immediately so newly discovered media is available instantly
-      moviesDatabase = updatedDatabase;
-      seriesDatabase = updatedSeries;
+// Genuinely-new arrivals: the source's "recently added" ordering, every 20 minutes.
+setInterval(() => {
+  refreshLatestFeed(5).catch(err => console.warn('[MovieBox] Latest feed sync error:', err.message));
+}, 20 * 60 * 1000);
 
-      console.log(`[Server] Found ${moviesDatabase.length} item(s) (${seriesDatabase.length} web series, ${moviesDatabase.filter(m => !m.isSeries).length} movies). Pre-fetching posters...`);
+// Weekly-deep coverage harvest: walk far down the popularity pages so the
+// catalog keeps absorbing titles that never touch the front pages.
+setInterval(() => {
+  refreshLatestReleases(40).catch(err => console.warn('[MovieBox] Deep harvest error:', err.message));
+}, 6 * 60 * 60 * 1000);
 
-      // 1. Fast Priority: Pre-fetch all movie and series posters in parallel batches
-      const metaBatchSize = 30;
-      for (let i = 0; i < moviesDatabase.length; i += metaBatchSize) {
-        const batch = moviesDatabase.slice(i, i + metaBatchSize);
-        await Promise.all(batch.map(async (movie) => {
-          try {
-            if (!movie.metadata || !movie.metadata.poster) {
-              movie.metadata = await fetchMovieMetadata(movie.title, movie.year);
-            } else if (movie.metadata.poster && movie.metadata.poster.startsWith('http')) {
-              movie.metadata.poster = await downloadAndCachePoster(movie.metadata.poster, movie.title, movie.year);
-            }
-            if (movie.metadata?.poster) {
-              movie.poster = movie.metadata.poster;
-              movie.posterUrl = movie.metadata.poster;
-            }
-          } catch (e) {}
-        }));
-      }
-
-      for (const show of seriesDatabase) {
-        try {
-          if (!show.metadata || !show.metadata.poster) {
-            show.metadata = await fetchMovieMetadata(show.title, show.year);
-          } else if (show.metadata.poster && show.metadata.poster.startsWith('http')) {
-            show.metadata.poster = await downloadAndCachePoster(show.metadata.poster, show.title, show.year);
-          }
-          if (show.metadata?.poster) {
-            show.poster = show.metadata.poster;
-            show.posterUrl = show.metadata.poster;
-          }
-        } catch (e) {}
-      }
-
-      console.log(`[Server] Finished loading and caching posters locally. Probing media tracks...`);
-
-      // 2. Secondary: Probe durations in background
-      const probeBatchSize = 10;
-      for (let i = 0; i < moviesDatabase.length; i += probeBatchSize) {
-        const batch = moviesDatabase.slice(i, i + probeBatchSize);
-        await Promise.all(batch.map(async (movie) => {
-          try {
-            if (!movie.duration) {
-              const probed = inspectMediaTracks(movie.filePath);
-              movie.duration = probed.duration;
-              movie.formattedDuration = probed.formattedDuration;
-              movie.tracks = probed;
-            }
-          } catch (e) {}
-        }));
-      }
-      console.log(`[Server] Finished probing all media tracks.`);
-    } catch (err) {
-      console.error(`[Server] Error during library refresh:`, err.message);
-    } finally {
-      refreshPromise = null;
-    }
-  })();
-  return refreshPromise;
-}
-
-function scheduleAutoRefresh(delayMs = 3000) {
-  if (scanTimeout) clearTimeout(scanTimeout);
-  scanTimeout = setTimeout(async () => {
-    if (isRefreshing) return;
-    isRefreshing = true;
-    try {
-      console.log(`[Watcher] Directory changes detected, auto-refreshing media library...`);
-      await refreshLibrary();
-    } catch (e) {
-      console.error(`[Watcher] Auto-refresh error:`, e.message);
-    } finally {
-      isRefreshing = false;
-    }
-  }, delayMs);
-}
-
-function initMediaWatchers() {
-  for (const dir of MEDIA_DIRS) {
-    if (fs.existsSync(dir)) {
-      try {
-        fs.watch(dir, { recursive: true }, (eventType, filename) => {
-          if (filename && /\.(mp4|mkv|avi|mov|webm|m4v|srt|vtt)$/i.test(filename)) {
-            console.log(`[Watcher] Media file event (${eventType}): ${filename}`);
-            scheduleAutoRefresh(3000);
-          }
-        });
-        console.log(`[Watcher] Actively watching '${dir}' for new movies & series.`);
-      } catch (err) {
-        console.warn(`[Watcher] Recursive watch unavailable for '${dir}', falling back to polling:`, err.message);
-      }
-    }
-  }
-
-  // Periodic polling fallback every 60 seconds to catch any newly added files
-  setInterval(() => {
-    try {
-      const scanned = scanMediaDirs(MEDIA_DIRS);
-      if (scanned.length !== moviesDatabase.length) {
-        console.log(`[Watcher] File count changed (${moviesDatabase.length} -> ${scanned.length}), auto-refreshing...`);
-        scheduleAutoRefresh(500);
-      }
-    } catch (e) {}
-  }, 60 * 1000);
-}
-
-// Initial scan and setup watchers
-refreshLibrary().then(() => {
-  initMediaWatchers();
-});
+// Dedicated audio-edition sweeper: pulls each title's authoritative dubs
+// list (movies AND web series) so every available language gets synced.
+setInterval(() => {
+  enrichEditionSweep(400, 240000).catch(err => console.warn('[MovieBox] Edition sweep error:', err.message));
+}, 5 * 60 * 1000);
 
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    moviesCount: moviesDatabase.filter(m => !m.isSeries).length, 
-    seriesCount: seriesDatabase.length,
-    totalFiles: moviesDatabase.length, 
-    directories: MEDIA_DIRS 
+  const snap = getMovieBoxCatalogSnapshot();
+  res.json({
+    status: 'ok',
+    mode: 'cloud-stremio',
+    onlineMoviesCount: snap?.length || 0
   });
 });
 
-// List all movies and series with no-cache headers
-app.get('/api/movies', async (req, res) => {
+// The local library was discontinued — these endpoints remain as empty
+// shells so older clients polling them get a clean, empty response.
+app.get('/api/movies', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-
-  if (req.query.rescan === 'true' || req.query.refresh === '1') {
-    await refreshLibrary();
-  }
-
-  res.json({ 
-    movies: moviesDatabase.filter(m => !m.isSeries), 
-    allMedia: moviesDatabase,
-    series: seriesDatabase, 
-    directories: MEDIA_DIRS 
-  });
+  res.json({ movies: [], series: [], directories: [], discontinued: true });
 });
 
-// List web series only
 app.get('/api/series', (req, res) => {
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.json({ series: seriesDatabase, directories: MEDIA_DIRS });
+  res.json({ series: [], directories: [], discontinued: true });
 });
-
-// Single series details
-app.get('/api/series/:id', (req, res) => {
-  const show = seriesDatabase.find(s => s.id === req.params.id);
-  if (!show) return res.status(404).json({ error: 'Series not found' });
-  res.json({ series: show });
-});
-
 // ==========================================================================
 // MovieBox Online Streaming & Metadata API
 // ==========================================================================
+// Lightweight freshness probe: apps compare fetchedAt with what they already
+// have and only download the full catalog when something actually changed.
+app.get('/api/moviebox/catalog/meta', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.json(getMovieBoxCatalogMeta());
+});
+
 app.get('/api/moviebox/catalog', async (req, res) => {
   try {
+    // Revalidate rather than re-download: Express' ETag turns an unchanged
+    // catalog into a tiny 304, so devices can check for new releases cheaply.
+    res.setHeader('Cache-Control', 'no-cache');
     const force = req.query.refresh === '1' || req.query.force === 'true';
     const catalog = await fetchMovieBoxCatalog(force);
     res.json(catalog);
@@ -298,6 +291,16 @@ app.get('/api/moviebox/search', async (req, res) => {
   } catch (err) {
     console.error('[MovieBox] Search error:', err.message);
     res.status(500).json({ error: 'Search failed', message: err.message });
+  }
+});
+
+app.post('/api/moviebox/refresh', requireAdmin, async (req, res) => {
+  try {
+    const pages = parseInt(req.query.pages || req.body?.pages, 10) || 12;
+    const result = await refreshLatestReleases(pages);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -426,6 +429,18 @@ async function warmMovieBoxPosters() {
       if (fs.existsSync(path.join(POSTERS_DIR, `mb_${hash}.jpg`))) continue;
       targets.push({ hash, remote });
     }
+    // Backfill variants for a rotating slice of already-cached originals so
+    // cards hit a ready thumbnail instead of waiting for generation.
+    try {
+      const cached = fs.readdirSync(POSTERS_DIR)
+        .filter(f => /^mb_[a-f0-9]{20}\.jpg$/.test(f))
+        .slice(0, 120);
+      for (const f of cached) {
+        const base = f.replace(/\.jpg$/, '');
+        queuePosterVariant(path.join(POSTERS_DIR, f), path.join(POSTERS_DIR, `${base}_w700.jpg`), 700);
+      }
+    } catch (e) {}
+
     if (!targets.length) return;
 
     console.log(`[MovieBox] Poster warmer: fetching ${targets.length} missing artwork file(s) in background…`);
@@ -449,7 +464,10 @@ async function warmMovieBoxPosters() {
           if (!upstream.ok) throw new Error(`Upstream ${upstream.status}`);
           const buffer = Buffer.from(await upstream.arrayBuffer());
           if (buffer.length < 1024) throw new Error('Suspiciously small artwork');
-          fs.writeFileSync(path.join(POSTERS_DIR, `mb_${job.hash}.jpg`), buffer);
+          if (!fs.existsSync(POSTERS_DIR)) fs.mkdirSync(POSTERS_DIR, { recursive: true });
+          const origPath = path.join(POSTERS_DIR, `mb_${job.hash}.jpg`);
+          fs.writeFileSync(origPath, buffer);
+          queuePosterVariant(origPath, path.join(POSTERS_DIR, `mb_${job.hash}_w700.jpg`), 700);
           ok++;
         } catch (e) {
           failed++;
@@ -482,8 +500,17 @@ app.get('/api/moviebox/poster/:id', async (req, res) => {
 
     const hash = crypto.createHash('md5').update(remote).digest('hex').substring(0, 20);
     const localFile = path.join(POSTERS_DIR, `mb_${hash}.jpg`);
+    // Thumbnail variants: phones don't need multi-MB originals on a rail.
+    const wantW = Math.min(1600, Math.max(120, parseInt(req.query.w, 10) || 0));
+    const variantFile = wantW ? path.join(POSTERS_DIR, `mb_${hash}_w${wantW}.jpg`) : null;
+    if (variantFile && fs.existsSync(variantFile)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      res.setHeader('Content-Type', 'image/jpeg');
+      return res.sendFile(variantFile);
+    }
 
-    if (!fs.existsSync(localFile)) {
+    const ensureOriginal = async () => {
+      if (fs.existsSync(localFile)) return true;
       if (!mbPosterInFlight.has(hash)) {
         const download = (async () => {
           let lastError = null;
@@ -503,6 +530,7 @@ app.get('/api/moviebox/poster/:id', async (req, res) => {
               if (!upstream.ok) throw new Error(`Upstream ${upstream.status}`);
               const buffer = Buffer.from(await upstream.arrayBuffer());
               if (buffer.length < 1024) throw new Error('Suspiciously small artwork');
+              if (!fs.existsSync(POSTERS_DIR)) fs.mkdirSync(POSTERS_DIR, { recursive: true });
               fs.writeFileSync(localFile, buffer);
               return;
             } catch (e) {
@@ -518,6 +546,16 @@ app.get('/api/moviebox/poster/:id', async (req, res) => {
     }
 
     if (!fs.existsSync(localFile)) return sendPosterPlaceholder(res, movie?.title);
+    // Serve the right-sized variant (?w=). Generation is QUED AND ASYNC:
+    // the first request gets the original instantly and the resized file is
+    // ready for the next visit — inline ffmpeg made a 30-card grid burst
+    // wait seconds per image and time out into placeholder art.
+    if (variantFile && fs.existsSync(variantFile)) {
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.sendFile(variantFile);
+    }
+    if (variantFile) queuePosterVariant(localFile, variantFile, wantW);
     res.setHeader('Content-Type', 'image/jpeg');
     res.setHeader('Cache-Control', 'public, max-age=604800');
     return res.sendFile(localFile);
@@ -556,6 +594,7 @@ app.get('/api/moviebox/backdrop/:id', async (req, res) => {
               if (!upstream.ok) throw new Error(`Upstream ${upstream.status}`);
               const buffer = Buffer.from(await upstream.arrayBuffer());
               if (buffer.length < 1024) throw new Error('Suspiciously small artwork');
+              if (!fs.existsSync(POSTERS_DIR)) fs.mkdirSync(POSTERS_DIR, { recursive: true });
               fs.writeFileSync(localFile, buffer);
               return;
             } catch (e) {
@@ -639,6 +678,9 @@ app.get('/api/moviebox/stream/:id', async (req, res) => {
 
     let resolved;
     try {
+      if (req.query.r || req.query.refresh) {
+        invalidateStreamCache(target.subjectId, seParam, epParam, req.query.res);
+      }
       resolved = await resolveMovieBoxStream(target.subjectId, target.detailPath, seParam, epParam, req.query.res);
     } catch (e) {
       console.warn(`[MovieBox] Stream resolve failed for ${movie.title}:`, e.message);
@@ -662,20 +704,31 @@ app.get('/api/moviebox/stream/:id', async (req, res) => {
     if (req.headers.range) upstreamHeaders.Range = req.headers.range;
 
     let upstream = await fetch(targetStreamUrl, { headers: upstreamHeaders });
+    if (upstream.status === 416) {
+      // Range past EOF: the URL is healthy, the player just seeked beyond the
+      // end. Answer 416 (the correct semantic) instead of masking it as 502,
+      // which players treat as a dead stream.
+      return res.status(416).json({ error: 'Requested range not satisfiable' });
+    }
     if (!upstream.ok && upstream.status !== 206) {
-      // If CDN token expired (401, 403, 410) or upstream hiccuped, invalidate cache and retry once with fresh URL
-      console.warn(`[MovieBox] Upstream returned ${upstream.status} for ${movie.title}, invalidating cache and retrying...`);
-      invalidateStreamCache(target.subjectId, seParam, epParam, req.query.res);
-      try {
-        const fresh = await resolveMovieBoxStream(target.subjectId, target.detailPath, seParam, epParam, req.query.res);
-        if (fresh && (fresh.url || fresh.streamUrl)) {
-          upstream = await fetch(fresh.url || fresh.streamUrl, { headers: upstreamHeaders });
+      // Only CDN-token expiry (401/403/410) warrants a re-resolve; other
+      // statuses are passed through so players see the real reason.
+      if (upstream.status === 401 || upstream.status === 403 || upstream.status === 410) {
+        console.warn(`[MovieBox] Upstream returned ${upstream.status} for ${movie.title}, invalidating cache and retrying...`);
+        invalidateStreamCache(target.subjectId, seParam, epParam, req.query.res);
+        try {
+          const fresh = await resolveMovieBoxStream(target.subjectId, target.detailPath, seParam, epParam, req.query.res);
+          if (fresh && (fresh.url || fresh.streamUrl)) {
+            upstream = await fetch(fresh.url || fresh.streamUrl, { headers: upstreamHeaders });
+          }
+        } catch (retryErr) {
+          console.warn(`[MovieBox] Stream retry failed:`, retryErr.message);
         }
-      } catch (retryErr) {
-        console.warn(`[MovieBox] Stream retry failed:`, retryErr.message);
-      }
-      if (!upstream.ok && upstream.status !== 206) {
-        return res.status(502).json({ error: `Upstream responded ${upstream.status}` });
+        if (!upstream.ok && upstream.status !== 206) {
+          return res.status(502).json({ error: `Upstream responded ${upstream.status}` });
+        }
+      } else {
+        return res.status(upstream.status >= 500 ? 502 : upstream.status).json({ error: `Upstream responded ${upstream.status}` });
       }
     }
 
@@ -705,73 +758,13 @@ app.get('/api/moviebox/stream/:id', async (req, res) => {
   }
 });
 
-// Rescan
-app.post('/api/movies/scan', async (req, res) => {
-  await refreshLibrary();
-  res.json({ 
-    message: 'Library refreshed', 
-    moviesCount: moviesDatabase.filter(m => !m.isSeries).length, 
-    seriesCount: seriesDatabase.length,
-    movies: moviesDatabase.filter(m => !m.isSeries),
-    series: seriesDatabase
-  });
-});
-
-// Single movie details
-app.get('/api/movies/:id', async (req, res) => {
-  const movie = moviesDatabase.find(m => m.id === req.params.id);
-  if (!movie) return res.status(404).json({ error: 'Movie not found' });
-
-  if (!movie.tracks || !movie.duration) {
-    const probed = inspectMediaTracks(movie.filePath);
-    movie.duration = probed.duration;
-    movie.formattedDuration = probed.formattedDuration;
-    movie.tracks = probed;
-  }
-
-  if (!movie.metadata || !movie.metadata.poster) {
-    movie.metadata = await fetchMovieMetadata(movie.title, movie.year);
-  }
-
-  res.json({ movie });
-});
-
-// Video Thumbnail Endpoint
-app.get('/api/movies/:id/thumbnail', (req, res) => {
-  const movie = moviesDatabase.find(m => m.id === req.params.id);
-  if (!movie) return res.status(404).send('Movie not found');
-
-  generateLocalThumbnail(movie, CACHE_DIR, (err, thumbPath) => {
-    if (err || !thumbPath) {
-      return res.status(404).send('Thumbnail error');
-    }
-    res.setHeader('Content-Type', 'image/jpeg');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.sendFile(thumbPath);
-  });
-});
-
-// Embedded Subtitle WebVTT Endpoint
-app.get('/api/movies/:id/subtitles/:index.vtt', (req, res) => {
-  const movie = moviesDatabase.find(m => m.id === req.params.id);
-  if (!movie) return res.status(404).send('Movie not found');
-
-  const subIndex = req.params.index;
-  extractSubtitleTrack(movie, CACHE_DIR, subIndex, (err, vttPath) => {
-    if (err || !vttPath) {
-      return res.status(404).send('Subtitle error');
-    }
-    res.setHeader('Content-Type', 'text/vtt');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.sendFile(vttPath);
-  });
-});
+// Rescan (admin-gated: triggers a full library scan)
 
 // Search Online Subtitles
 app.get('/api/movies/:id/subtitles/online', async (req, res) => {
-  const movie = moviesDatabase.find(m => m.id === req.params.id);
-  const queryTitle = req.query.query || movie?.title;
-  const queryYear = req.query.year || movie?.year;
+  // Catalog ids are cloud ids (mb_*) — the title travels in the query.
+  const queryTitle = req.query.query;
+  const queryYear = req.query.year;
 
   if (!queryTitle) return res.status(400).json({ error: 'Title required for search' });
 
@@ -812,9 +805,7 @@ app.post('/api/movies/:id/subtitles/download', async (req, res) => {
 
 // Custom Subtitle Upload / Import Endpoint
 app.post('/api/movies/:id/subtitles/upload', (req, res) => {
-  const movie = moviesDatabase.find(m => m.id === req.params.id);
-  if (!movie) return res.status(404).json({ error: 'Movie not found' });
-
+  // Works for any id (mb_* included): custom subtitles are stored per id.
   const { text, filename, label } = req.body;
   if (!text) return res.status(400).json({ error: 'Subtitle text required' });
 
@@ -857,247 +848,6 @@ app.get('/api/movies/:id/subtitles/custom/:filename', (req, res) => {
 });
 
 // HLS Stream with Quality & Audio Selection
-app.get('/api/stream/:id/audio/:audioIndex/quality/:quality/index.m3u8', (req, res) => {
-  const movie = moviesDatabase.find(m => m.id === req.params.id);
-  if (!movie) return res.status(404).json({ error: 'Movie not found' });
-
-  const { audioIndex, quality } = req.params;
-  const startTime = req.query.start || 0;
-  startHlsTranscode(movie, CACHE_DIR, audioIndex, quality, startTime, (playlistPath) => {
-    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.sendFile(playlistPath);
-  });
-});
-
-app.get('/api/stream/:id/quality/:quality/index.m3u8', (req, res) => {
-  const movie = moviesDatabase.find(m => m.id === req.params.id);
-  if (!movie) return res.status(404).json({ error: 'Movie not found' });
-
-  const quality = req.params.quality;
-  const audioIndex = req.query.audioIndex || null;
-  const startTime = req.query.start || 0;
-  startHlsTranscode(movie, CACHE_DIR, audioIndex, quality, startTime, (playlistPath) => {
-    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.sendFile(playlistPath);
-  });
-});
-
-app.get('/api/stream/:id/audio/:audioIndex/index.m3u8', (req, res) => {
-  const movie = moviesDatabase.find(m => m.id === req.params.id);
-  if (!movie) return res.status(404).json({ error: 'Movie not found' });
-
-  const audioIndex = req.params.audioIndex;
-  const quality = req.query.quality || null;
-  const startTime = req.query.start || 0;
-  startHlsTranscode(movie, CACHE_DIR, audioIndex, quality, startTime, (playlistPath) => {
-    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.sendFile(playlistPath);
-  });
-});
-
-app.get('/api/stream/:id/index.m3u8', (req, res) => {
-  const movie = moviesDatabase.find(m => m.id === req.params.id);
-  if (!movie) return res.status(404).json({ error: 'Movie not found' });
-
-  const audioIndex = req.query.audioIndex || null;
-  const quality = req.query.quality || null;
-  const startTime = req.query.start || 0;
-  startHlsTranscode(movie, CACHE_DIR, audioIndex, quality, startTime, (playlistPath) => {
-    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.sendFile(playlistPath);
-  });
-});
-
-// Live Playback Heartbeat Ping (called by player every 8-10s)
-app.post('/api/stream/:id/ping', async (req, res) => {
-  const localMovie = moviesDatabase.find(m => m.id === req.params.id);
-  const { sessionId, currentTime, quality, duration, movieTitle, poster, isOnline, isSeries, season, episode } = req.body || {};
-  const ip = extractClientIp(req);
-  const userAgent = req.headers['user-agent'] || '';
-
-  // Only touch local transcode timer if it's a local movie
-  if (localMovie) {
-    touchMovieTranscode(req.params.id);
-  }
-
-  let finalTitle = localMovie?.title || movieTitle;
-  let finalPoster = localMovie?.metadata?.poster || poster;
-  const isOnlineStream = isOnline || String(req.params.id).startsWith('mb_') || !localMovie;
-
-  if (!finalTitle && isOnlineStream) {
-    try {
-      const found = await findMovieBoxItem(req.params.id);
-      if (found?.movie) {
-        finalTitle = found.movie.title;
-        finalPoster = finalPoster || found.movie.poster;
-      }
-    } catch (e) {}
-  }
-
-  if (season && episode) {
-    finalTitle = `${finalTitle || 'Series'} (S${season}:E${episode})`;
-  }
-
-  recordHeartbeat({
-    sessionId: sessionId || `${ip}_${req.params.id}`,
-    ip,
-    userAgent,
-    movieId: req.params.id,
-    movieTitle: finalTitle || (isOnlineStream ? 'Online Stream' : 'Movie Stream'),
-    poster: finalPoster || null,
-    quality: quality || 'AUTO',
-    currentTime: currentTime || 0,
-    duration: duration || localMovie?.duration || 0,
-    isOnline: isOnlineStream
-  });
-
-  res.json({ success: true, active: true });
-});
-
-// Admin Live Stream Monitoring Stats
-app.get('/api/admin/stats', (req, res) => {
-  const sessions = getActiveSessions();
-  const system = getSystemMetrics();
-  res.json({
-    sessions,
-    system,
-    moviesCount: moviesDatabase.length,
-    timestamp: Date.now()
-  });
-});
-
-// Admin Kick / Terminate Specific Stream
-app.post('/api/admin/sessions/:sessionId/kill', (req, res) => {
-  const { sessionId } = req.params;
-  const { movieId } = req.body || {};
-  if (movieId) {
-    stopMovieTranscodes(movieId);
-  }
-  removeSession(sessionId);
-  res.json({ success: true, message: `Session ${sessionId} terminated.` });
-});
-
-// Stop / Release Stream Transcode (Immediate RAM & CPU release)
-app.all('/api/stream/:id/stop', (req, res) => {
-  const ip = extractClientIp(req);
-  const sessionId = req.body?.sessionId || req.query?.sessionId || `${ip}_${req.params.id}`;
-  stopMovieTranscodes(req.params.id);
-  removeSession(sessionId);
-  res.json({ success: true, message: `Terminated transcode processes for ${req.params.id}` });
-});
-
-// Helper: Locate HLS Video Segment File on disk
-function findSegmentFile(movieId, segmentName) {
-  const movieFolder = path.join(CACHE_DIR, movieId);
-  if (!fs.existsSync(movieFolder)) return null;
-
-  const direct = path.join(movieFolder, segmentName);
-  if (fs.existsSync(direct)) return direct;
-
-  try {
-    const subdirs = fs.readdirSync(movieFolder, { withFileTypes: true });
-    for (const d of subdirs) {
-      if (d.isDirectory()) {
-        const subFile = path.join(movieFolder, d.name, segmentName);
-        if (fs.existsSync(subFile)) {
-          return subFile;
-        }
-      }
-    }
-  } catch (e) {}
-  return null;
-}
-
-// Helper: Serve HLS Video Segment Chunks with Async In-Flight Transcode Waiting
-function serveSegmentChunk(movieId, segmentName, req, res) {
-  touchMovieTranscode(movieId);
-
-  const initialFile = findSegmentFile(movieId, segmentName);
-  if (initialFile) {
-    res.setHeader('Content-Type', 'video/MP2T');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    return res.sendFile(initialFile);
-  }
-
-  // If segment is currently being encoded by FFmpeg, poll for up to 10 seconds
-  let attempts = 0;
-  const maxAttempts = 100; // 100 * 100ms = 10 seconds
-  let finished = false;
-
-  const interval = setInterval(() => {
-    attempts++;
-    const file = findSegmentFile(movieId, segmentName);
-    if (file && !finished) {
-      finished = true;
-      clearInterval(interval);
-      if (!res.headersSent) {
-        res.setHeader('Content-Type', 'video/MP2T');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-        res.sendFile(file);
-      }
-    } else if (attempts >= maxAttempts && !finished) {
-      finished = true;
-      clearInterval(interval);
-      if (!res.headersSent) {
-        res.status(404).send('Segment not ready yet');
-      }
-    }
-  }, 100);
-
-  req.on('close', () => {
-    finished = true;
-    clearInterval(interval);
-  });
-}
-
-// Universal HLS Video Segment Route Resolvers
-app.get('/api/stream/:id/audio/:audioIndex/quality/:quality/:segment', (req, res) => serveSegmentChunk(req.params.id, req.params.segment, req, res));
-app.get('/api/stream/:id/quality/:quality/:segment', (req, res) => serveSegmentChunk(req.params.id, req.params.segment, req, res));
-app.get('/api/stream/:id/audio/:audioIndex/:segment', (req, res) => serveSegmentChunk(req.params.id, req.params.segment, req, res));
-app.get('/api/stream/:id/:subfolder/:segment', (req, res) => serveSegmentChunk(req.params.id, req.params.segment, req, res));
-app.get('/api/stream/:id/:segment', (req, res) => serveSegmentChunk(req.params.id, req.params.segment, req, res));
-
-// Direct Video Stream (HTTP Range 206)
-app.get('/api/stream/:id/direct', (req, res) => {
-  const movie = moviesDatabase.find(m => m.id === req.params.id);
-  if (!movie || !fs.existsSync(movie.filePath)) {
-    return res.status(404).send('Movie file not found');
-  }
-
-  const stat = fs.statSync(movie.filePath);
-  const fileSize = stat.size;
-  const range = req.headers.range;
-
-  if (range) {
-    const parts = range.replace(/bytes=/, "").split("-");
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-    const chunksize = (end - start) + 1;
-    const file = fs.createReadStream(movie.filePath, { start, end });
-    const head = {
-      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-      'Accept-Ranges': 'bytes',
-      'Content-Length': chunksize,
-      'Content-Type': movie.filename.endsWith('.mkv') ? 'video/x-matroska' : 'video/mp4',
-    };
-    res.writeHead(206, head);
-    file.pipe(res);
-  } else {
-    const head = {
-      'Content-Length': fileSize,
-      'Content-Type': movie.filename.endsWith('.mkv') ? 'video/x-matroska' : 'video/mp4',
-    };
-    res.writeHead(200, head);
-    fs.createReadStream(movie.filePath).pipe(res);
-  }
-});
-
 // SPA Fallback
 if (fs.existsSync(WEB_DIST)) {
   app.use((req, res, next) => {
