@@ -40,6 +40,7 @@ import {
 
 import { API_BASE } from './config';
 import { reportPlayerError } from './telemetry.js';
+import { reportPlay } from './activity.js';
 import { cleanCatalogTitle as cleanPlayTitle } from './onlineLibrary';
 import './styles/player.css';
 
@@ -1957,6 +1958,13 @@ const ISO_LANG_MAP = {
           setLoading(false);
           setStreamError(null);
           setIsPlaying(true);
+          // "What was watched": one anonymous report per title per 5 minutes.
+          reportPlay({
+            mediaId: media?.id || media?.subjectId,
+            title: media?.title,
+            se: media?.seasonNumber,
+            ep: media?.episodeNumber
+          });
         }}
         onPause={() => {
           setIsPlaying(false);

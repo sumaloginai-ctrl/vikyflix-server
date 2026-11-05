@@ -8,6 +8,7 @@ import './styles/aurora.css'
 // Premium cinematic skin — loads LAST so it wins over everything above.
 import './styles/premium.css'
 import { initTelemetry, reportAppError } from './telemetry.js'
+import { initActivity } from './activity.js'
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -66,6 +67,7 @@ class ErrorBoundary extends Component {
 }
 
 initTelemetry();
+initActivity();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

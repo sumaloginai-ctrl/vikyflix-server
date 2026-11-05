@@ -47,7 +47,7 @@ function getSessionId() {
  * device). No account, name, phone number, email or IP is ever attached.
  * It exists so the server can count "3 installs affected" instead of 30 events.
  */
-function getInstallId() {
+export function getInstallId() {
   try {
     let id = localStorage.getItem(INSTALL_KEY);
     if (!id || !/^[A-Za-z0-9-]{8,64}$/.test(id)) {
