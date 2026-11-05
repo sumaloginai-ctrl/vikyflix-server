@@ -1,0 +1,2009 @@
+/* ==========================================================================
+   VIKYFLIX — DETAIL SCREENS
+   --------------------------------------------------------------------------
+   Area prefix: .det-
+   Covers: full-page web-series detail (SeriesDetailsView) and the
+   full-page movie detail (MovieDetailsView). Every colour, radius, shadow,
+   type size and motion curve comes from src/styles/aurora.css — no new
+   palette here.
+
+   NOTE ON CASCADE: styles/aurora.css is imported LAST in main.jsx, so any
+   rule that overrides an aurora primitive (.vf-poster, .vf-btn, .vf-chip)
+   is written as a compound selector to win on specificity.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Shared shell + section scaffolding
+   -------------------------------------------------------------------------- */
+.det-shell {
+  width: 100%;
+  max-width: 1680px;
+  margin: 0 auto;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+@media (min-width: 769px) {
+  .det-shell {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .det-shell {
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+}
+
+.det-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-bottom: 6rem;
+  background: var(--bg-deep);
+  color: var(--text-main);
+  animation: vf-fade-in var(--dur-base) var(--ease-out) both;
+}
+
+.det-section {
+  padding-top: 40px;
+}
+
+.det-sec-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.det-sec-title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 900;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.15;
+  color: var(--text-main);
+}
+
+.det-sec-sub {
+  margin: 6px 0 0;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.det-body-text {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: 1.65;
+  color: var(--text-muted);
+}
+
+/* --------------------------------------------------------------------------
+   2. Hero — cinematic artwork, bottom-weighted scrim, compact meta line
+   -------------------------------------------------------------------------- */
+.det-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  min-height: 460px;
+}
+
+@media (min-width: 769px) {
+  .det-hero {
+    min-height: 580px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .det-hero {
+    min-height: 620px;
+  }
+}
+
+/* --- artwork layer (shared <Poster>: reserved box, shimmer, safe fallback) */
+.det-hero-art {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.det-hero-art .det-hero-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto !important;
+}
+
+.det-hero-art .det-hero-backdrop .vf-poster > .vf-poster-img {
+  filter: blur(26px) saturate(1.15) brightness(0.52);
+  transform: scale(1.14);
+}
+
+.det-hero-art .det-hero-backdrop .vf-poster-fallback {
+  opacity: 0.4;
+}
+
+.det-hero-art .det-hero-backdrop .vf-poster-fallback-title,
+.det-hero-art .det-hero-backdrop .vf-poster-fallback-retry {
+  display: none;
+}
+
+html[data-theme="light"] .det-hero-art .det-hero-backdrop .vf-poster > .vf-poster-img {
+  filter: saturate(1.05) brightness(1);
+  opacity: 0.4;
+  transform: scale(1.06);
+}
+
+/* --- scrim: heavy at the bottom, clear at the top */
+.det-hero-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to top,
+      var(--bg-deep) 0%,
+      color-mix(in srgb, var(--bg-deep) 88%, transparent) 26%,
+      color-mix(in srgb, var(--bg-deep) 46%, transparent) 58%,
+      color-mix(in srgb, var(--bg-deep) 12%, transparent) 82%,
+      transparent 100%
+    ),
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--bg-deep) 72%, transparent) 0%,
+      color-mix(in srgb, var(--bg-deep) 20%, transparent) 46%,
+      transparent 78%
+    );
+}
+
+/* --- content column */
+/* The hero bleeds under the fixed top bar (`.cine-main-viewport.is-bleed`),
+   so the copy starts below the 56/60px navigation instead of behind it. */
+.det-hero-inner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex: 1;
+  padding-top: 72px;
+  padding-bottom: 32px;
+}
+
+@media (min-width: 769px) {
+  .det-hero-inner {
+    padding-top: 80px;
+    padding-bottom: 48px;
+  }
+}
+
+/* --- back affordance (thumb friendly, top-left, 44px target) */
+.det-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.det-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 44px;
+  padding: 0 1rem 0 0.85rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-glass);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  color: var(--text-main);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) linear, border-color var(--dur-fast) linear,
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.det-back:hover {
+  background: var(--bg-glass-strong);
+  border-color: var(--border-strong);
+  transform: translateX(-2px);
+}
+
+.det-back:active {
+  transform: scale(0.97);
+}
+
+/* --- hero body grid: copy + optional poster tile */
+.det-hero-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
+  align-items: end;
+  margin-top: 32px;
+}
+
+@media (min-width: 980px) {
+  .det-hero-body {
+    grid-template-columns: minmax(0, 1fr) 240px;
+    gap: 40px;
+  }
+}
+
+@media (min-width: 1400px) {
+  .det-hero-body {
+    grid-template-columns: minmax(0, 1fr) 280px;
+  }
+}
+
+.det-hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  max-width: 760px;
+}
+
+.det-kicker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: var(--fs-micro);
+  font-weight: 800;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.det-kicker-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.6;
+}
+
+.det-hero-title {
+  margin: 0;
+  font-size: var(--fs-display);
+  font-weight: 900;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.04;
+  color: var(--text-main);
+  text-wrap: balance;
+  text-shadow: 0 8px 34px color-mix(in srgb, var(--bg-deep) 72%, transparent);
+}
+
+/* --- single compact metadata line: year · rating · genres · seasons/episodes */
+.det-meta {
+  display: block;
+  margin: 0;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.det-meta-star {
+  display: inline-block;
+  vertical-align: -2px;
+  margin-right: 4px;
+  color: var(--accent-gold);
+}
+
+.det-meta-text {
+  color: inherit;
+}
+
+.det-synopsis {
+  margin: 0;
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 64ch;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.det-cast {
+  margin: 0;
+  font-size: var(--fs-meta);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.det-cast-label {
+  color: var(--text-muted);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: var(--fs-micro);
+  margin-right: 6px;
+}
+
+/* --- exactly two primary actions */
+.det-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.det-actions .vf-btn.primary {
+  min-width: 148px;
+  box-shadow: 0 10px 30px var(--primary-glow);
+}
+
+.det-actions .vf-btn.ghost {
+  min-width: 132px;
+}
+
+.det-actions .vf-btn.ghost.is-saved {
+  background: color-mix(in srgb, var(--accent-gold) 16%, transparent);
+  border-color: color-mix(in srgb, var(--accent-gold) 52%, transparent);
+  color: var(--accent-gold);
+}
+
+.det-actions .vf-btn.ghost.is-saved:hover {
+  background: color-mix(in srgb, var(--accent-gold) 24%, transparent);
+}
+
+/* --- crisp poster tile (desktop only) */
+.det-hero-tile {
+  display: none;
+}
+
+@media (min-width: 980px) {
+  .det-hero-tile {
+    display: block;
+  }
+}
+
+.det-hero-tile .det-hero-poster {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-raised), var(--edge-light);
+  background: var(--bg-card);
+}
+
+/* --------------------------------------------------------------------------
+   3. Episodes — heading, season dropdown, dense number grid
+   -------------------------------------------------------------------------- */
+.det-season {
+  position: relative;
+}
+
+.det-season-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.det-season-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0 0.95rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  box-shadow: var(--edge-light);
+  color: var(--text-main);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) linear, background-color var(--dur-fast) linear,
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.det-season-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+}
+
+.det-season-btn:active {
+  transform: scale(0.98);
+}
+
+.det-season-count {
+  color: var(--text-dim);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.det-season-caret {
+  color: var(--text-muted);
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.det-season-caret.is-open {
+  transform: rotate(180deg);
+}
+
+.det-season-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 41;
+  min-width: 224px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 0.35rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-glass-strong);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  box-shadow: var(--shadow-raised);
+  animation: det-menu-in var(--dur-fast) var(--ease-out) both;
+}
+
+@keyframes det-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.det-season-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-main);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) linear, color var(--dur-fast) linear;
+}
+
+.det-season-item:hover {
+  background: color-mix(in srgb, var(--text-main) 8%, transparent);
+}
+
+.det-season-item[aria-selected="true"] {
+  background: var(--primary-gradient);
+  color: #180f14;
+}
+
+.det-season-item[aria-selected="true"] .det-season-count {
+  color: color-mix(in srgb, #180f14 70%, transparent);
+}
+
+/* --- dense number grid */
+.det-eps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(54px, 1fr));
+  gap: 10px;
+}
+
+.det-ep {
+  position: relative;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  box-shadow: var(--edge-light);
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out), border-color var(--dur-fast) linear,
+    background-color var(--dur-fast) linear, color var(--dur-fast) linear,
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+.det-ep:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-main);
+  box-shadow: var(--shadow-card);
+}
+
+.det-ep:active {
+  transform: scale(0.95);
+}
+
+.det-ep:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.det-ep[aria-pressed="true"] {
+  background: var(--primary-gradient);
+  border-color: transparent;
+  color: #180f14;
+  box-shadow: 0 8px 22px var(--primary-glow);
+}
+
+.det-ep[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  inset: auto 6px 5px;
+  height: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, #180f14 55%, transparent);
+}
+
+/* --- designed loading / empty / error states */
+.det-ep-skel {
+  height: 54px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.det-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 16px;
+  border-radius: var(--radius-lg);
+  border: 1px dashed var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-card) 55%, transparent);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.det-state p {
+  margin: 0;
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+}
+
+.det-state-icon {
+  color: var(--text-dim);
+}
+
+.det-state .vf-btn.quiet {
+  color: var(--primary);
+}
+
+/* --------------------------------------------------------------------------
+   4. "More Web Series" rail
+   -------------------------------------------------------------------------- */
+.det-more {
+  padding-top: 40px;
+}
+
+.det-more-rail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 42%;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 8px;
+}
+
+@media (min-width: 600px) {
+  .det-more-rail {
+    grid-auto-columns: 30%;
+  }
+}
+
+@media (min-width: 900px) {
+  .det-more-rail {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-auto-columns: auto;
+    overflow: visible;
+    gap: 16px;
+  }
+}
+
+@media (min-width: 1500px) {
+  .det-more-rail {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}
+
+.det-more-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  scroll-snap-align: start;
+  border-radius: var(--radius-md);
+}
+
+.det-more-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+.det-more-card .det-more-art {
+  display: block;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  overflow: hidden;
+  transition: transform var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-fast) linear;
+}
+
+.det-more-card:hover .det-more-art {
+  transform: translateY(-4px);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-raised);
+}
+
+.det-more-card:hover .det-more-art .vf-poster > .vf-poster-img {
+  transform: scale(1.04);
+}
+
+.det-more-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.det-more-meta {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --------------------------------------------------------------------------
+   5. Movie detail modal
+   -------------------------------------------------------------------------- */
+.det-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(3, 6, 12, 0.85);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  animation: vf-fade-in var(--dur-base) var(--ease-out) both;
+}
+
+@media (min-width: 769px) {
+  .det-modal-backdrop {
+    align-items: center;
+    padding: 32px;
+  }
+}
+
+.det-modal {
+  position: relative;
+  width: 100%;
+  max-width: 920px;
+  max-height: 94vh;
+  max-height: 94dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 24px 24px 0 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: none;
+  background: #090e18;
+  box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.85);
+  animation: det-sheet-in var(--dur-base) var(--ease-out) both;
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 36px);
+}
+
+@media (min-width: 769px) {
+  .det-modal {
+    border-radius: var(--radius-xl);
+    border-bottom: 1px solid var(--border-strong);
+    max-height: 86vh;
+  }
+}
+
+@keyframes det-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.det-modal:focus,
+.det-modal:focus-visible {
+  /* The sheet is a programmatic focus target, not a control — the ring
+     belongs on the buttons inside it. */
+  outline: none;
+}
+
+.det-modal-sheet-handle {
+  position: relative;
+  z-index: 3;
+  width: 44px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text-dim);
+  margin: 10px auto 0;
+}
+
+@media (min-width: 769px) {
+  .det-modal-sheet-handle {
+    display: none;
+  }
+}
+
+.det-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 5;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-glass);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) linear, transform var(--dur-fast) var(--ease-out);
+}
+
+.det-modal-close:hover {
+  background: var(--bg-glass-strong);
+}
+
+.det-modal-close:active {
+  transform: scale(0.94);
+}
+
+/* --- modal hero: blurred artwork + crisp poster + copy */
+.det-modal-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.det-modal-art {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.det-modal-art .det-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto !important;
+}
+
+.det-modal-art .det-modal-backdrop .vf-poster > .vf-poster-img {
+  filter: blur(24px) saturate(1.15) brightness(0.55);
+  transform: scale(1.12);
+}
+
+.det-modal-art .det-modal-backdrop .vf-poster-fallback {
+  opacity: 0.35;
+}
+
+.det-modal-art .det-modal-backdrop .vf-poster-fallback-title,
+.det-modal-art .det-modal-backdrop .vf-poster-fallback-retry {
+  display: none;
+}
+
+.det-modal-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to top,
+      var(--bg-surface) 0%,
+      color-mix(in srgb, var(--bg-surface) 92%, transparent) 20%,
+      color-mix(in srgb, var(--bg-surface) 48%, transparent) 54%,
+      color-mix(in srgb, var(--bg-surface) 10%, transparent) 100%
+    ),
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--bg-surface) 66%, transparent) 0%,
+      color-mix(in srgb, var(--bg-surface) 14%, transparent) 52%,
+      transparent 84%
+    );
+}
+
+.det-modal-hero-inner {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-items: end;
+  padding-top: 34px;
+  padding-bottom: 22px;
+}
+
+@media (min-width: 620px) {
+  .det-modal-hero-inner {
+    grid-template-columns: 148px minmax(0, 1fr);
+    gap: 24px;
+    padding-top: 44px;
+    padding-bottom: 26px;
+  }
+}
+
+.det-modal-poster-tile {
+  display: none;
+}
+
+@media (min-width: 620px) {
+  .det-modal-poster-tile {
+    display: block;
+  }
+}
+
+.det-modal-poster-tile .det-modal-poster {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-raised);
+  background: var(--bg-card);
+}
+
+.det-modal-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.det-modal-title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 900;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.1;
+  color: var(--text-main);
+  text-wrap: balance;
+}
+
+.det-modal-copy .det-synopsis {
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* --- modal body */
+.det-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 4px 16px 28px;
+}
+
+@media (min-width: 769px) {
+  .det-modal-body {
+    padding: 8px 32px 32px;
+  }
+}
+
+.det-modal-section-title {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* --- specs grid (quality / audio / language / country) */
+.det-specs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.det-spec {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  box-shadow: var(--edge-light);
+}
+
+.det-spec-k {
+  font-size: var(--fs-micro);
+  font-weight: 800;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.det-spec-v {
+  font-size: var(--fs-meta);
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+/* --------------------------------------------------------------------------
+   6. Reduced motion — keep state changes legible, drop the movement
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .det-back:hover,
+  .det-ep:hover,
+  .det-more-card:hover .det-more-art {
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   7. REIMAGINED IMMERSIVE CINEMATIC DETAIL SHEET (A24 / APPLE TV+ CALIBRE)
+   ========================================================================== */
+.det-modal-immersive {
+  max-width: 1080px;
+  background: #06080e;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.9);
+}
+
+.det-top-bar-overlay {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 14px 16px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(6, 8, 14, 0.92) 0%, rgba(6, 8, 14, 0.5) 70%, transparent 100%);
+}
+
+.det-floating-back-btn,
+.det-floating-icon-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.det-floating-icon-btn {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  justify-content: center;
+}
+
+.det-floating-icon-btn.saved {
+  background: rgba(255, 42, 85, 0.3);
+  border-color: rgba(255, 42, 85, 0.6);
+  color: #ff5e3a;
+}
+
+.det-floating-back-btn:hover,
+.det-floating-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: scale(1.05);
+}
+
+.det-top-right-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Cinema Stage & Full-Bleed Artwork */
+.det-hero-cinema-stage {
+  position: relative;
+  min-height: 440px;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  padding-bottom: 24px;
+}
+
+.det-hero-backdrop-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.det-hero-backdrop-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 20%;
+  filter: brightness(0.55) contrast(1.1);
+  transform: scale(1.03);
+}
+
+.det-hero-backdrop-fallback {
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 60% 30%, #1e293b 0%, #06080e 100%);
+}
+
+.det-hero-vignette-bottom {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, #06080e 0%, rgba(6, 8, 14, 0.85) 40%, transparent 85%);
+}
+
+.det-hero-vignette-sides {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(6, 8, 14, 0.75) 0%, transparent 60%);
+}
+
+.det-hero-color-glow {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 45%;
+  height: 55%;
+  background: radial-gradient(circle at 20% 80%, rgba(255, 42, 85, 0.22) 0%, transparent 70%);
+  filter: blur(45px);
+  pointer-events: none;
+}
+
+.det-hero-content-cluster {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 28px;
+  align-items: flex-end;
+  padding-top: 60px;
+}
+
+@media (max-width: 680px) {
+  .det-hero-content-cluster {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 16px;
+    padding-top: 24px;
+    padding-bottom: 12px;
+  }
+
+  .det-hero-poster-anchor {
+    width: 160px;
+    max-width: 50vw;
+    border-radius: 14px;
+    margin: 0 auto;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85), 0 0 30px rgba(255, 42, 85, 0.2);
+  }
+
+  .det-hero-text-block {
+    width: 100%;
+    align-items: center;
+  }
+
+  .det-eyebrow-pills {
+    justify-content: center;
+  }
+
+  .det-title-heading {
+    font-size: 1.65rem;
+    text-align: center;
+    line-height: 1.2;
+    margin: 4px 0;
+  }
+
+  .det-meta-strip {
+    justify-content: center;
+    font-size: 0.82rem;
+    gap: 6px;
+  }
+
+  .det-cta-actions-row {
+    width: 100%;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 10px;
+  }
+
+  .det-play-primary-btn {
+    width: 100%;
+    justify-content: center;
+    padding: 14px 24px;
+    font-size: 1.02rem;
+    border-radius: 14px;
+  }
+
+  .det-watchlist-ghost-btn {
+    width: 100%;
+    justify-content: center;
+    padding: 12px 20px;
+    font-size: 0.92rem;
+    border-radius: 14px;
+  }
+
+  .det-audio-editions-group {
+    justify-content: center;
+  }
+
+  .det-audio-pills-row {
+    justify-content: center;
+  }
+}
+
+.det-hero-poster-anchor {
+  position: relative;
+  display: block !important;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.85);
+  border: 1.5px solid rgba(255, 255, 255, 0.22);
+}
+
+.det-poster-corner-quality {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  background: rgba(15, 23, 42, 0.94);
+  color: #38bdf8;
+  font-size: 0.62rem;
+  font-weight: 900;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+.det-hero-text-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.det-eyebrow-pills {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.det-eyebrow-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.det-tech-chip-4k {
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+  font-size: 0.62rem;
+  font-weight: 900;
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.det-tech-chip-atmos {
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  color: #c084fc;
+  font-size: 0.62rem;
+  font-weight: 900;
+  padding: 2px 7px;
+  border-radius: 6px;
+}
+
+.det-title-heading {
+  font-size: clamp(1.6rem, 3.2vw, 2.5rem);
+  font-weight: 900;
+  color: #ffffff;
+  line-height: 1.15;
+  letter-spacing: -0.4px;
+  margin: 0;
+  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
+}
+
+.det-meta-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+}
+
+.det-rating-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #fbbf24;
+  font-weight: 800;
+}
+
+.det-imdb-label {
+  background: #f59e0b;
+  color: #000;
+  font-size: 0.58rem;
+  font-weight: 900;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.det-meta-runtime {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.det-sep {
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.det-cta-actions-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.det-play-primary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #ff2a55 0%, #ff5e3a 100%);
+  color: #ffffff;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 800;
+  padding: 12px 24px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(255, 42, 85, 0.45);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.det-play-primary-btn:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 12px 32px rgba(255, 42, 85, 0.6);
+}
+
+.det-watchlist-ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  font-size: 0.88rem;
+  font-weight: 700;
+  padding: 12px 20px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.det-watchlist-ghost-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-2px);
+}
+
+.det-watchlist-ghost-btn.is-saved {
+  background: rgba(255, 42, 85, 0.25);
+  border-color: rgba(255, 42, 85, 0.5);
+  color: #ff5e3a;
+}
+
+/* Audio Editions Strip */
+.det-audio-editions-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.det-audio-editions-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #94a3b8;
+  letter-spacing: 0.6px;
+}
+
+.det-audio-pills-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.det-audio-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.det-audio-pill.active {
+  background: rgba(255, 42, 85, 0.2);
+  border-color: #ff2a55;
+  color: #ffffff;
+  font-weight: 800;
+}
+
+/* Scroll Body Sections */
+.det-scroll-body {
+  padding-top: 18px;
+  padding-bottom: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.det-section-eyebrow {
+  font-size: 0.75rem;
+  font-weight: 900;
+  letter-spacing: 1px;
+  color: #ff5e3a;
+  text-transform: uppercase;
+  margin: 0 0 10px;
+}
+
+.det-synopsis-paragraph {
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: #cbd5e1;
+  margin: 0;
+  max-width: 800px;
+}
+
+/* Specs Matrix Cards */
+.det-specs-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.det-spec-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #0d121c;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 12px 16px;
+  transition: border-color 0.2s ease;
+}
+
+.det-spec-card:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.det-spec-card-icon {
+  color: #ff2a55;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.det-spec-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.det-spec-k {
+  font-size: 0.68rem;
+  font-weight: 800;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.det-spec-v {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+/* Recommendations Rail */
+.det-rec-header {
+  margin-bottom: 12px;
+}
+
+.det-rec-subtitle {
+  font-size: 0.82rem;
+  color: #94a3b8;
+}
+
+.det-recommendations-rail {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.det-recommendations-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.det-rec-card {
+  flex: 0 0 115px;
+  width: 115px;
+  min-width: 115px;
+  max-width: 115px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: transform 0.2s ease;
+}
+
+@media (min-width: 480px) {
+  .det-rec-card {
+    flex: 0 0 135px;
+    width: 135px;
+    min-width: 135px;
+    max-width: 135px;
+  }
+}
+
+.det-rec-card:hover {
+  transform: translateY(-3px);
+}
+
+.det-rec-poster-box {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-card, #131722);
+}
+
+.det-rec-poster-box .vf-poster {
+  width: 100% !important;
+  height: 100% !important;
+  aspect-ratio: 2 / 3 !important;
+}
+
+.det-rec-poster-box .vf-poster-img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+.det-rec-play-pill {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 42, 85, 0.9);
+  border: none;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(0.85);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.det-rec-card:hover .det-rec-play-pill {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.det-rec-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.det-rec-meta {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+@media (max-width: 768px) {
+  .det-hero-cinema-stage {
+    min-height: 360px;
+  }
+  .det-title-heading {
+    font-size: 1.45rem;
+  }
+  .det-play-primary-btn {
+    padding: 10px 18px;
+    font-size: 0.88rem;
+  }
+  .det-watchlist-ghost-btn {
+    padding: 10px 16px;
+    font-size: 0.82rem;
+  }
+}
+
+
+
+/* ==========================================================================
+   VIKYFLIX — ENHANCED SERIES EPISODES EXPERIENCE
+   ========================================================================== */
+.det-seasons-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.det-seasons-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.det-season-tab-pill {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.det-season-tab-pill.active {
+  background: #ff2a55;
+  border-color: #ff2a55;
+  color: #ffffff;
+  font-weight: 800;
+  box-shadow: 0 4px 14px rgba(255, 42, 85, 0.4);
+}
+
+.det-mode-toggle-group {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 2px;
+}
+
+.det-mode-toggle-btn {
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 999px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.det-mode-toggle-btn.active {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  font-weight: 800;
+}
+
+/* Rich Episode Cards Grid */
+.det-ep-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.det-rich-ep-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #0d121c;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: left;
+}
+
+.det-rich-ep-card:hover {
+  background: #141c2b;
+  border-color: rgba(255, 42, 85, 0.4);
+  transform: translateY(-2px);
+}
+
+.det-rich-ep-card.is-selected {
+  border-color: #ff2a55;
+  background: rgba(255, 42, 85, 0.12);
+}
+
+.det-rich-ep-thumb {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.det-rich-ep-num-label {
+  font-size: 0.65rem;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  color: #ff5e3a;
+  text-transform: uppercase;
+}
+
+.det-rich-ep-num-val {
+  font-size: 1.15rem;
+  font-weight: 900;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.det-rich-ep-play-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 42, 85, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.det-rich-ep-card:hover .det-rich-ep-play-overlay {
+  opacity: 1;
+}
+
+.det-rich-ep-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.det-rich-ep-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0;
+}
+
+.det-rich-ep-meta {
+  font-size: 0.72rem;
+  color: #64748b;
+  margin: 0;
+}
+
+.det-rich-ep-action-btn {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.det-rich-ep-card:hover .det-rich-ep-action-btn {
+  background: #ff2a55;
+  border-color: #ff2a55;
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(255, 42, 85, 0.4);
+}
+
+
+/* Sticky Header for Full-Page Series View */
+.det-sticky-header {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(env(safe-area-inset-top, 0px), 12px) 16px 12px;
+  background: rgba(9, 13, 22, 0.88);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.det-sticky-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-size: 0.84rem;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.det-sticky-back:hover {
+  background: rgba(255, 255, 255, 0.18);
+  transform: translateX(-2px);
+}
+
+.det-sticky-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.det-sticky-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.05);
+}
+
+
+/* ==========================================================================
+   LIGHT MODE OVERRIDES FOR DETAILS VIEW
+   Ensures storyline, synopsis, top bar, specs, recommendations & episode list
+   are perfectly contrasted and crystal clear on light surfaces.
+   ========================================================================== */
+html[data-theme="light"] .det-page {
+  background: var(--bg-deep, #f4f5f9);
+  color: var(--text-main, #0d1220);
+}
+
+html[data-theme="light"] .det-sticky-header {
+  background: rgba(255, 255, 255, 0.92);
+  border-bottom: 1px solid var(--border-subtle, #e2e8f0);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+}
+
+html[data-theme="light"] .det-sticky-back {
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-strong, #cbd5e1);
+  color: var(--text-main, #0d1220);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+html[data-theme="light"] .det-sticky-back:hover {
+  background: var(--bg-elevated, #eceef5);
+  border-color: var(--primary, #e11d48);
+}
+
+html[data-theme="light"] .det-synopsis-paragraph {
+  color: var(--text-main, #1e293b) !important;
+  font-weight: 500;
+}
+
+html[data-theme="light"] .det-section-eyebrow {
+  color: var(--primary, #e11d48) !important;
+}
+
+html[data-theme="light"] .det-meta-strip {
+  color: var(--text-muted, #4b5568);
+}
+
+html[data-theme="light"] .det-meta-genres {
+  color: var(--text-muted, #4b5568);
+}
+
+html[data-theme="light"] .det-spec-card {
+  background: var(--bg-card, #ffffff) !important;
+  border: 1px solid var(--border-subtle, #e2e8f0) !important;
+  box-shadow: var(--shadow-card);
+}
+
+html[data-theme="light"] .det-spec-k {
+  color: var(--text-muted, #64748b) !important;
+}
+
+html[data-theme="light"] .det-spec-v {
+  color: var(--text-main, #0f172a) !important;
+}
+
+html[data-theme="light"] .det-rec-card {
+  background: var(--bg-card, #ffffff);
+  border-color: var(--border-subtle, #e2e8f0);
+}
+
+html[data-theme="light"] .det-rec-title {
+  color: var(--text-main, #0f172a) !important;
+}
+
+html[data-theme="light"] .det-rec-subtitle {
+  color: var(--text-muted, #64748b) !important;
+}
+
+html[data-theme="light"] .det-watchlist-ghost-btn {
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid var(--border-strong, #cbd5e1);
+  color: var(--text-main, #0d1220);
+}
+
+html[data-theme="light"] .det-watchlist-ghost-btn:hover {
+  background: #ffffff;
+  border-color: var(--primary, #e11d48);
+}
+
+html[data-theme="light"] .det-audio-pill {
+  background: var(--bg-elevated, #eceef5);
+  border: 1px solid var(--border-strong, #cbd5e1);
+  color: var(--text-main, #0d1220);
+}
+
+html[data-theme="light"] .det-season-tab-pill {
+  background: var(--bg-elevated, #eceef5);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  color: var(--text-muted, #475569);
+}
+
+html[data-theme="light"] .det-season-tab-pill.active {
+  background: var(--primary, #e11d48);
+  color: #ffffff;
+}
+
+html[data-theme="light"] .det-mode-toggle-group {
+  background: var(--bg-elevated, #eceef5);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+}
+
+html[data-theme="light"] .det-mode-toggle-btn {
+  color: var(--text-muted, #475569);
+}
+
+html[data-theme="light"] .det-mode-toggle-btn.active {
+  background: #ffffff;
+  color: var(--text-main, #0d1220);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+html[data-theme="light"] .det-rich-ep-card {
+  background: var(--bg-card, #ffffff);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+  box-shadow: var(--shadow-card);
+}
+
+html[data-theme="light"] .det-rich-ep-card:hover {
+  background: var(--bg-elevated, #f8fafc);
+  border-color: var(--primary, #e11d48);
+}
+
+html[data-theme="light"] .det-rich-ep-title {
+  color: var(--text-main, #0f172a) !important;
+}
+
+html[data-theme="light"] .det-rich-ep-meta {
+  color: var(--text-muted, #64748b) !important;
+}
+
+html[data-theme="light"] .det-rich-ep-num-val {
+  color: var(--text-main, #0f172a) !important;
+}
+
+html[data-theme="light"] .det-rich-ep-thumb {
+  background: var(--bg-elevated, #f1f5f9);
+  border: 1px solid var(--border-subtle, #e2e8f0);
+}
+
+html[data-theme="light"] .det-rich-ep-action-btn {
+  background: var(--bg-elevated, #eceef5);
+  border: 1px solid var(--border-subtle, #d2d6e4);
+  color: var(--text-main, #0d1220);
+}

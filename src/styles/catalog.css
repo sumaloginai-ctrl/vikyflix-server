@@ -1,0 +1,1243 @@
+/* ==========================================================================
+   VIKYFLIX — CATALOG AREA (All Movies + Web Series)
+   --------------------------------------------------------------------------
+   Owned by the catalog screens. Every rule here is prefixed with `.cat-`
+   so nothing leaks into the other areas of the app (the MovieBox view and
+   the legacy `.hub-*` classes stay untouched).
+
+   Design contract (DESIGN_SPEC §5 "Catalog"):
+     · filter hub  → compact search pill, filter chips, readable sort value
+     · grid        → 2:3 posters, 14–18px gutters, 1-line title + 1-line meta
+     · cards       → hover lift + 3% artwork zoom, shimmer while loading
+     · list view   → editorial rows, hairline separators, generous spacing
+     · states      → designed empty / loading, never blank
+     · tail        → slim spinner, never a "Load More" button
+
+   Only tokens from `aurora.css` are used — no new brand colours. The single
+   exception is the ink used *on* the ember gradient (`--cat-ink`), which is
+   the same ink `.vf-btn.primary` already uses in aurora.css.
+   ========================================================================== */
+
+.cat-catalog {
+  /* Ink for text/icons sitting on top of the ember gradient. */
+  --cat-ink: #180f14;
+  --cat-ink-soft: rgba(24, 15, 20, 0.18);
+
+  width: 100%;
+  max-width: 1680px;
+  margin: 0 auto;
+  padding: 16px 16px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (min-width: 769px) {
+  .cat-catalog {
+    padding: 32px 32px 72px;
+    gap: 24px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .cat-catalog {
+    padding: 40px 40px 88px;
+  }
+}
+
+/* ==========================================================================
+   Filter hub
+   ========================================================================== */
+
+.cat-hub {
+  position: relative; /* No z-index and no entrance animation on purpose:
+                         a stacking context here would trap the dropdown
+                         menus below `.cat-menu-backdrop` (z-index 95) and
+                         the phone menus would stop receiving clicks. */
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--edge-light), var(--shadow-card);
+}
+
+@media (min-width: 769px) {
+  .cat-hub {
+    padding: 12px;
+  }
+}
+
+.cat-hub-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+/* On phones the controls stay on one horizontally scrollable line so the
+   menus never get clipped by a wrapping container. */
+@media (max-width: 768px) {
+  .cat-hub-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .cat-hub-bar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* ---- Live search pill ---- */
+
+.cat-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 12px;
+  min-width: 168px;
+  flex: 1 1 220px;
+  max-width: 320px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-dim);
+  transition: border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) linear,
+    color var(--dur-fast) linear;
+}
+
+.cat-search:focus-within {
+  border-color: var(--primary);
+  background: var(--bg-card);
+  color: var(--text-main);
+  box-shadow: 0 0 0 3px var(--primary-glow);
+}
+
+.cat-search svg {
+  flex-shrink: 0;
+}
+
+.cat-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 0.3rem 0;
+}
+
+.cat-search input::placeholder {
+  color: var(--text-dim);
+}
+
+.cat-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--dur-fast) linear, background-color var(--dur-fast) linear;
+}
+
+.cat-search-clear:hover {
+  color: var(--text-main);
+  background: var(--bg-card);
+}
+
+/* ---- Filter chips ---- */
+
+.cat-dropdown {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.cat-dropdown--end {
+  margin-left: auto;
+}
+
+@media (max-width: 768px) {
+  .cat-dropdown--end {
+    margin-left: 0;
+  }
+}
+
+.cat-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--fs-meta);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color var(--dur-fast) linear,
+    border-color var(--dur-fast) linear,
+    color var(--dur-fast) linear,
+    box-shadow var(--dur-base) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.cat-chip-btn:hover {
+  background: var(--bg-card);
+  border-color: var(--border-strong);
+  color: var(--text-main);
+}
+
+.cat-chip-btn:active {
+  transform: scale(0.97);
+}
+
+.cat-chip-btn.is-active {
+  background: var(--primary-gradient);
+  border-color: transparent;
+  color: var(--cat-ink);
+  box-shadow: 0 6px 18px var(--primary-glow);
+}
+
+.cat-chip-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  color: var(--text-main);
+  font-size: var(--fs-micro);
+  font-weight: 800;
+  line-height: 1;
+}
+
+.cat-chip-btn.is-active .cat-chip-count {
+  background: var(--cat-ink-soft);
+  border-color: transparent;
+  color: var(--cat-ink);
+}
+
+.cat-chip-caret {
+  color: var(--text-dim);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.cat-chip-btn:hover .cat-chip-caret {
+  transform: translateY(1px);
+}
+
+.cat-chip-btn.is-active .cat-chip-caret {
+  color: var(--cat-ink);
+}
+
+/* ---- Sort control (current value readable at a glance) ---- */
+
+.cat-sort-btn {
+  gap: 8px;
+  padding-right: 12px;
+}
+
+.cat-sort-label {
+  font-size: var(--fs-micro);
+  font-weight: 800;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.cat-sort-value {
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.cat-chip-btn:hover .cat-sort-value {
+  color: var(--text-main);
+}
+
+/* ---- Dropdown menus ---- */
+
+.cat-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 120;
+  min-width: 240px;
+  max-width: min(88vw, 340px);
+  padding: 8px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-glass-strong);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-modal);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  animation: cat-menu-in var(--dur-fast) var(--ease-out) both;
+}
+
+.cat-menu--wide {
+  min-width: 280px;
+}
+
+.cat-menu--end {
+  left: auto;
+  right: 0;
+}
+
+@keyframes cat-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cat-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 6px 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--fs-micro);
+  font-weight: 800;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.cat-menu-head button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--primary);
+  font-family: inherit;
+  font-size: var(--fs-micro);
+  font-weight: 800;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.cat-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 280px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.cat-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) linear, color var(--dur-fast) linear;
+}
+
+.cat-menu-item:hover {
+  background: var(--bg-elevated);
+  color: var(--text-main);
+}
+
+.cat-menu-item.is-selected {
+  background: var(--primary-glow);
+  color: var(--text-main);
+}
+
+.cat-menu-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cat-menu-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  color: transparent;
+}
+
+.cat-menu-check--radio {
+  border-radius: var(--radius-pill);
+}
+
+.cat-menu-item.is-selected .cat-menu-check {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--bg-base);
+}
+
+.cat-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  /* Below the sticky navbar (90) and the mobile dock (99), above the page
+     content — the dropdown menus sit at 120 and stay clickable above it. */
+  z-index: 80;
+  background: transparent;
+}
+
+@media (max-width: 768px) {
+  /* The phone menus are positioned with inline fixed styles; here we only
+     make the inner list scroll inside the measured height. */
+  .cat-menu-list {
+    max-height: none;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .cat-menu-item {
+    min-height: 44px;
+  }
+}
+
+/* ---- Active filter chips row ---- */
+
+.cat-active {
+  /* Sits just above the menu backdrop so "remove" / "Reset" stay reachable
+     while a dropdown is open, but still below the sticky navbar (90). */
+  position: relative;
+  z-index: 86;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+
+.cat-active-label {
+  font-size: var(--fs-micro);
+  font-weight: 800;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.cat-active-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) linear,
+    color var(--dur-fast) linear,
+    background-color var(--dur-fast) linear;
+}
+
+.cat-active-chip:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.cat-active-chip svg {
+  color: var(--text-dim);
+  transition: color var(--dur-fast) linear;
+}
+
+.cat-active-chip:hover svg {
+  color: var(--primary);
+}
+
+.cat-active-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  cursor: pointer;
+  transition: color var(--dur-fast) linear, border-color var(--dur-fast) linear;
+}
+
+.cat-active-reset:hover {
+  color: var(--text-main);
+  border-color: var(--primary);
+}
+
+/* ---- Segmented control (view mode slot) ---- */
+
+.cat-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+}
+
+.cat-seg-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--fs-micro);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) linear,
+    color var(--dur-fast) linear,
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+.cat-seg-btn:hover {
+  color: var(--text-main);
+}
+
+.cat-seg-btn.is-active {
+  background: var(--primary-gradient);
+  color: var(--cat-ink);
+  box-shadow: 0 4px 12px var(--primary-glow);
+}
+
+@media (max-width: 768px) {
+  .cat-seg-btn {
+    padding: 0 10px;
+  }
+
+  .cat-seg-btn span {
+    display: none;
+  }
+}
+
+/* ==========================================================================
+   Results line
+   ========================================================================== */
+
+.cat-results {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.cat-results strong {
+  color: var(--text-main);
+  font-weight: 800;
+}
+
+/* ==========================================================================
+   Poster grid
+   ========================================================================== */
+
+.cat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  width: 100%;
+}
+
+/* Series tiles match film grid: 3 columns on mobile, matching Movies view */
+.cat-grid--series {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (min-width: 480px) {
+  .cat-grid,
+  .cat-grid--series {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 768px) {
+  .cat-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 16px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .cat-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1300px) {
+  .cat-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 18px;
+  }
+}
+
+@media (min-width: 1600px) {
+  .cat-grid {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}
+
+.cat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  cursor: pointer;
+  transition: transform var(--dur-base) var(--ease-out);
+}
+
+.cat-card:hover {
+  transform: translateY(-4px);
+}
+
+.cat-card-media {
+  position: relative;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow var(--dur-base) var(--ease-out),
+    border-color var(--dur-base) var(--ease-out);
+}
+
+.cat-card:hover .cat-card-media {
+  box-shadow: var(--shadow-raised);
+  border-color: var(--border-strong);
+}
+
+.cat-card-media .cat-card-poster {
+  display: block;
+  border-radius: var(--radius-md);
+}
+
+/* NOTE ON CASCADE: aurora.css is imported last in main.jsx, so these
+   selectors are deliberately one level deeper than `.vf-poster .vf-poster-img`
+   to keep the 280ms artwork zoom the spec asks for. */
+.cat-card-media .cat-card-poster .cat-card-img {
+  transition: opacity var(--dur-slow) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
+}
+
+.cat-card:hover .cat-card-media .cat-card-poster .cat-card-img {
+  transform: scale(1.03);
+}
+
+/* ---- Artwork badges (max two: rating + type) ---- */
+
+.cat-card-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(10, 14, 22, 0.9);
+  color: var(--accent-gold);
+  font-size: var(--fs-micro);
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* ---- Hover play overlay ---- */
+
+.cat-card-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(to top, var(--bg-glass-strong) 0%, transparent 62%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+.cat-card:hover .cat-card-overlay {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.cat-card-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  padding: 0 0 0 2px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--primary-gradient);
+  color: var(--cat-ink);
+  box-shadow: 0 8px 24px var(--primary-glow);
+  cursor: pointer;
+  transform: scale(0.85);
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+
+.cat-card:hover .cat-card-play {
+  transform: scale(1);
+}
+
+@media (hover: none) {
+  .cat-card-overlay {
+    display: none;
+  }
+}
+
+/* ---- Caption ---- */
+
+.cat-card-caption {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cat-card-title {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.3;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cat-card-meta {
+  margin: 0;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (min-width: 1024px) {
+  .cat-card-title {
+    font-size: 0.9rem;
+  }
+
+  .cat-card-meta {
+    font-size: 0.75rem;
+  }
+}
+
+/* ==========================================================================
+   Editorial list view (Movies)
+   ========================================================================== */
+
+.cat-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.cat-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) linear;
+}
+
+.cat-row:hover {
+  background: var(--bg-surface);
+}
+
+.cat-row-thumb {
+  position: relative;
+  width: 66px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+}
+
+.cat-row-thumb .cat-row-poster {
+  display: block;
+  border-radius: var(--radius-sm);
+}
+
+.cat-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cat-row-title {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.3;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cat-row-meta {
+  margin: 0;
+  font-size: var(--fs-meta);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cat-row-synopsis {
+  margin: 0;
+  max-width: 72ch;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cat-row-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cat-row-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--fs-meta);
+  font-weight: 700;
+  cursor: pointer;
+  transition: color var(--dur-fast) linear,
+    border-color var(--dur-fast) linear,
+    background-color var(--dur-fast) linear;
+}
+
+.cat-row-btn:hover {
+  color: var(--text-main);
+  border-color: var(--primary);
+}
+
+.cat-row-btn.is-saved {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+.cat-row-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--primary-gradient);
+  color: var(--cat-ink);
+  font-family: inherit;
+  font-size: var(--fs-meta);
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 6px 18px var(--primary-glow);
+  transition: transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-base) var(--ease-out);
+}
+
+.cat-row-play:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 26px var(--primary-glow-strong);
+}
+
+@media (max-width: 640px) {
+  .cat-row {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 4px;
+  }
+
+  .cat-row-thumb {
+    width: 54px;
+  }
+
+  .cat-row-synopsis {
+    display: none;
+  }
+
+  .cat-row-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .cat-row-btn span,
+  .cat-row-play span {
+    display: none;
+  }
+
+  .cat-row-btn,
+  .cat-row-play {
+    min-height: 40px;
+    padding: 0 14px;
+  }
+}
+
+/* ==========================================================================
+   Empty state
+   ========================================================================== */
+
+.cat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 56px 24px;
+  text-align: center;
+  background: var(--bg-surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
+.cat-empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--primary);
+}
+
+.cat-empty-title {
+  margin: 0;
+  font-size: var(--fs-heading);
+  font-weight: 800;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-main);
+}
+
+.cat-empty-text {
+  margin: 0;
+  max-width: 44ch;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.cat-empty-action {
+  margin-top: 4px;
+}
+
+/* ==========================================================================
+   Infinite-scroll tail — a slim spinner, never a button
+   ========================================================================== */
+
+.cat-tail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 0 8px;
+  color: var(--text-dim);
+  font-size: var(--fs-meta);
+  font-weight: 600;
+}
+
+.cat-tail-spinner {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--primary);
+  animation: cat-spin 0.9s linear infinite;
+}
+
+@keyframes cat-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+
+/* ==========================================================================
+   VIKYFLIX — QUICK GENRE STRIP IN CATALOG HUB
+   ========================================================================== */
+.cat-quick-pills-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+}
+
+.cat-quick-pills-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.cat-quick-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  flex-shrink: 0;
+}
+
+.cat-quick-pill:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+.cat-quick-pill.is-active {
+  background: linear-gradient(135deg, #ff2a55 0%, #ff5e3a 100%);
+  border-color: #ff2a55;
+  color: #ffffff;
+  font-weight: 800;
+  box-shadow: 0 4px 14px rgba(255, 42, 85, 0.45);
+}
+
+.cat-quick-pill-icon {
+  font-size: 0.85rem;
+}
+
+/* ==========================================================================
+   Categorized Shelf Sections & Breadcrumb in Catalog Views
+   ========================================================================== */
+
+.cat-shelves-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  margin-top: 14px;
+}
+
+.home-shelf__track .cat-card,
+.cat-shelf-card {
+  width: 120px;
+  min-width: 120px;
+  max-width: 120px;
+  flex: 0 0 120px;
+}
+
+@media (min-width: 768px) {
+  .home-shelf__track .cat-card,
+  .cat-shelf-card {
+    width: 155px;
+    min-width: 155px;
+    max-width: 155px;
+    flex: 0 0 155px;
+  }
+}
+
+.cat-genre-breadcrumb {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  margin: 4px 0 16px;
+  background: rgba(18, 22, 32, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+}
+
+.cat-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 160ms ease;
+}
+
+.cat-back-btn:hover,
+.cat-back-btn:active {
+  background: var(--primary, #f43f5e);
+  border-color: var(--primary, #f43f5e);
+}
+
+.cat-genre-title-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.cat-genre-heading {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+
+.cat-genre-sub {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+
+/* ==========================================================================
+   LIGHT MODE OVERRIDES FOR CATALOG & CATEGORIES
+   ========================================================================== */
+html[data-theme="light"] .cat-genre-heading {
+  color: var(--text-main, #0d1220) !important;
+}
+
+html[data-theme="light"] .cat-genre-sub {
+  color: var(--text-muted, #4b5568) !important;
+}
+
+html[data-theme="light"] .cat-genre-breadcrumb {
+  background: var(--bg-card, #ffffff) !important;
+  border: 1px solid var(--border-subtle, #e6e8f0) !important;
+  box-shadow: var(--shadow-card);
+}
+
+html[data-theme="light"] .cat-back-btn {
+  background: var(--bg-surface, #f6f7fb) !important;
+  border: 1px solid var(--border-strong, #d2d6e4) !important;
+  color: var(--text-main, #0d1220) !important;
+}
+
+html[data-theme="light"] .cat-back-btn:hover {
+  background: var(--primary, #e11d48) !important;
+  border-color: var(--primary, #e11d48) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] .cat-shelves-container .home-shelf__heading {
+  color: var(--text-main, #0d1220) !important;
+}
+
+.cat-card-rank-badge {
+  background: linear-gradient(135deg, #e50914 0%, #ff5e3a 100%);
+  color: #ffffff;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  padding: 0.12rem 0.45rem;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(229, 9, 20, 0.45);
+  display: inline-flex;
+  align-items: center;
+}
+
+html[data-theme="light"] .cat-shelves-container .home-shelf__lead {
+  color: var(--text-muted, #4b5568) !important;
+}
