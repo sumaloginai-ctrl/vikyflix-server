@@ -39,7 +39,7 @@ const CLASSES = new Set([
 const FIELDS = [
   'cls', 'kind', 'code', 'route', 'msg', 'platform', 'appVersion',
   'versionCode', 'mediaId', 'se', 'ep', 'res', 'src', 'detail', 'sessionId',
-  'installId'
+  'installId', 'device'
 ];
 
 const rateBuckets = new Map(); // ip -> { minute, count }

@@ -21,7 +21,7 @@ const MAX_BATCH = 50;
 const MAX_PER_MINUTE = 300;
 
 const TYPES = new Set(['play', 'app_open']);
-const FIELDS = ['type', 'installId', 'platform', 'appVersion', 'versionCode', 'mediaId', 'title', 'se', 'ep'];
+const FIELDS = ['type', 'installId', 'platform', 'device', 'appVersion', 'versionCode', 'mediaId', 'title', 'se', 'ep'];
 
 const rateBuckets = new Map();
 let lastPruneDay = '';
