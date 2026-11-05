@@ -137,16 +137,16 @@ app.get('/api/app/version', (req, res) => {
   const stats = apkPath ? fs.statSync(apkPath) : null;
   const apkSha256 = apkPath ? crypto.createHash('sha256').update(fs.readFileSync(apkPath)).digest('hex') : null;
   res.json({
-    versionCode: 66,
-    versionName: '2.9.9',
+    versionCode: 67,
+    versionName: '2.10.0',
     packageName: isTv ? 'uk.vikyflix.tv' : 'uk.vikyflix.app',
     apkUrl: isTv ? 'https://vikyflix.uk/download/tv' : 'https://vikyflix.uk/download',
     apkSha256,
     fileSize: stats?.size || 5501048,
     releaseDate: stats?.mtime?.toISOString() || new Date().toISOString(),
     releaseNotes: isTv
-      ? 'MovieFlix TV — dedicated Android TV app built for remote navigation.'
-      : 'Phone layout pass: cleaner two-row filters, a readable section header, two-line card titles and no more clipped text on rails.'
+      ? 'MovieFlix TV 2.10.0 — automatic error reporting, watch reports, and the subtitle upload fix.'
+      : 'MovieFlix 2.10.0 — automatic error reporting, watch reports, and the subtitle upload fix.'
   });
 });
 
