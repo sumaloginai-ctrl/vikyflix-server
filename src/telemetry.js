@@ -11,6 +11,7 @@
  *  - no PII, no tokens, no full URLs with secrets (server re-sanitizes too).
  */
 import { API_BASE, IS_NATIVE_APP } from './config.js';
+import { describeDevice } from './device.js';
 
 const QUEUE_KEY = 'vf_telq_v1';
 const SESSION_KEY = 'vf_tsess_v1';
@@ -146,6 +147,7 @@ export function reportFailure(fields) {
       ts: new Date().toISOString(),
       sessionId,
       installId: getInstallId(),
+      device: describeDevice(),
       platform: fields.platform || platformName()
     }, appContext());
     enqueue(event);

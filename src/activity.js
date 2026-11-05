@@ -11,6 +11,7 @@
  */
 import { API_BASE, IS_NATIVE_APP } from './config.js';
 import { getInstallId } from './telemetry.js';
+import { describeDevice } from './device.js';
 
 const QUEUE_KEY = 'vf_actq_v1';
 const MAX_QUEUE = 50;
@@ -122,6 +123,7 @@ export function reportPlay({ mediaId, title, se, ep }) {
       se: se === undefined || se === null ? undefined : Number(se),
       ep: ep === undefined || ep === null ? undefined : Number(ep),
       platform: platformName(),
+      device: describeDevice(),
       installId: getInstallId()
     }, appContext());
 
@@ -145,6 +147,7 @@ export function reportAppOpen() {
     const event = Object.assign({
       type: 'app_open',
       platform: platformName(),
+      device: describeDevice(),
       installId: getInstallId()
     }, appContext());
     const queue = readQueue();
