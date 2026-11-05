@@ -10,6 +10,7 @@ const { pruneCache } = require('./transcoder');
 const { searchOnlineSubtitles, downloadAndConvertSubtitle, srtToVtt } = require('./subtitles');
 const { fetchMovieBoxCatalog, refreshLatestReleases, refreshLatestFeed, findMovieBoxItem, searchMovieBox, resolveMovieBoxStream, invalidateStreamCache, fetchSeriesSeasons, enrichCardEditions, enrichEditionSweep, getMovieBoxCatalogSnapshot, getMovieBoxCatalogMeta } = require('./moviebox');
 const telemetry = require('./telemetry');
+const activity = require('./activity');
 
 const compression = require('compression');
 
@@ -58,6 +59,9 @@ app.use(express.json({ limit: '10mb' }));
 // Failure telemetry intake (docs/telemetry.md). Always answers 204; the sink
 // never throws into a request and never stores PII, IPs or secrets.
 app.post('/api/telemetry/events', telemetry.handler);
+
+// Watch activity intake — "what was watched" (no timing). Always 204.
+app.post('/api/activity/events', activity.handler);
 
 // High-speed local poster cache delivery with immutable 1-year browser cache
 // --- Poster variant queue (bounded concurrency, async) ---
@@ -256,6 +260,7 @@ app.get('/api/health', (req, res) => {
 
 // Telemetry pipeline health for the failure-monitor role (admin-gated).
 app.get('/api/telemetry/status', requireAdmin, telemetry.statusHandler);
+app.get('/api/activity/status', requireAdmin, activity.statusHandler);
 
 // The local library was discontinued — these endpoints remain as empty
 // shells so older clients polling them get a clean, empty response.
