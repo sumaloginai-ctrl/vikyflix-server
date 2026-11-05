@@ -123,6 +123,28 @@ export function reportPlay({ mediaId, title, se, ep }) {
   } catch (e) { /* never break playback for activity reporting */ }
 }
 
+/**
+ * Tell the owner "this install exists and runs version X". Sent once per app
+ * session; it is how you learn that a user installed the new APK (old builds
+ * cannot send anything at all).
+ */
+export function reportAppOpen() {
+  try {
+    if (optedOut() || typeof window === 'undefined') return;
+    if (sessionStorage.getItem('vf_ao_sent') === '1') return;
+    sessionStorage.setItem('vf_ao_sent', '1');
+    const event = Object.assign({
+      type: 'app_open',
+      platform: platformName(),
+      installId: getInstallId()
+    }, appContext());
+    const queue = readQueue();
+    queue.push(event);
+    writeQueue(queue);
+    scheduleFlush();
+  } catch (e) { /* never block boot for a heartbeat */ }
+}
+
 export function flushActivity() {
   try {
     const queue = readQueue();
@@ -136,6 +158,7 @@ export function flushActivity() {
 export function initActivity() {
   try {
     if (typeof window === 'undefined') return;
+    reportAppOpen();
     setInterval(flushActivity, FLUSH_MS);
     window.addEventListener('pagehide', flushActivity);
     document.addEventListener('visibilitychange', () => {
