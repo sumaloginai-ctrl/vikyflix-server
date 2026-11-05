@@ -20,8 +20,8 @@ const RETENTION_DAYS = Math.max(1, parseInt(process.env.ACTIVITY_RETENTION_DAYS 
 const MAX_BATCH = 50;
 const MAX_PER_MINUTE = 300;
 
-const TYPES = new Set(['play', 'app_open']);
-const FIELDS = ['type', 'installId', 'platform', 'device', 'appVersion', 'versionCode', 'mediaId', 'title', 'se', 'ep'];
+const TYPES = new Set(['play', 'play_progress', 'play_end', 'app_open']);
+const FIELDS = ['type', 'playId', 'installId', 'platform', 'device', 'appVersion', 'versionCode', 'mediaId', 'title', 'se', 'ep', 'watchedSeconds', 'percent', 'completed'];
 
 const rateBuckets = new Map();
 let lastPruneDay = '';
@@ -66,14 +66,22 @@ function sanitizeEvent(raw) {
   const event = { type, ts: new Date().toISOString() };
   for (const key of FIELDS) {
     if (key === 'type' || raw[key] === undefined || raw[key] === null) continue;
-    if (key === 'se' || key === 'ep' || key === 'versionCode') {
-      const n = pickNumber(raw[key]);
-      if (n !== undefined) event[key] = n;
+    if (key === 'completed') {
+      if (raw.completed === true) event.completed = true;
       continue;
     }
     if (key === 'installId') {
       const id = String(raw[key] || '');
       if (/^[A-Za-z0-9-]{8,64}$/.test(id)) event.installId = id;
+      continue;
+    }
+    if (key === 'se' || key === 'ep' || key === 'versionCode' || key === 'watchedSeconds' || key === 'percent') {
+      const n = pickNumber(raw[key]);
+      if (n !== undefined) {
+        if (key === 'watchedSeconds') event.watchedSeconds = Math.max(0, Math.min(86400, Math.round(n)));
+        else if (key === 'percent') event.percent = Math.max(0, Math.min(100, Math.round(n)));
+        else event[key] = n;
+      }
       continue;
     }
     event[key] = cleanText(String(raw[key]), key === 'title' ? 140 : 120);
