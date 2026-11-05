@@ -40,7 +40,7 @@ import {
 
 import { API_BASE } from './config';
 import { reportPlayerError } from './telemetry.js';
-import { reportPlay } from './activity.js';
+import { reportPlay, reportPlayEnd, reportPlayProgress } from './activity.js';
 import { cleanCatalogTitle as cleanPlayTitle } from './onlineLibrary';
 import './styles/player.css';
 
@@ -231,6 +231,71 @@ export default function VideoPlayer({ movie, onClose }) {
   const activeSeasonNumber = isSeriesShow ? (onlineEpisode?.season ?? media.seasonNumber ?? 1) : null;
   const activeEpisodeNumber = isSeriesShow ? (onlineEpisode?.episode ?? media.episodeNumber ?? 1) : null;
   const hasEpisodeContext = isSeriesShow && activeSeasonNumber != null && activeEpisodeNumber != null;
+
+  // ---- watch-time tracking: what was watched + for how long ----
+  const watchSessionRef = useRef(null);
+  const watchTickRef = useRef(null);
+  const lastProgressSentRef = useRef(0);
+
+  const endWatchSession = () => {
+    const session = watchSessionRef.current;
+    if (watchTickRef.current) { clearInterval(watchTickRef.current); watchTickRef.current = null; }
+    watchSessionRef.current = null;
+    if (!session) return;
+    const watchedSeconds = Math.round(session.watchedMs / 1000);
+    if (watchedSeconds < 2) return; // tap-and-close noise
+    reportPlayEnd({
+      playId: session.playId,
+      mediaId: session.mediaId,
+      title: session.title,
+      se: session.se,
+      ep: session.ep,
+      watchedSeconds,
+      percent: Math.round(session.percent || 0),
+      completed: (session.percent || 0) >= 90
+    });
+  };
+
+  const beginWatchSession = () => {
+    if (watchSessionRef.current) return;
+    const session = {
+      playId: `ply_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      mediaId: media && (media.id || media.subjectId),
+      title: media && media.title,
+      se: hasEpisodeContext ? activeSeasonNumber : undefined,
+      ep: hasEpisodeContext ? activeEpisodeNumber : undefined,
+      watchedMs: 0,
+      percent: 0
+    };
+    watchSessionRef.current = session;
+    reportPlay({ mediaId: session.mediaId, title: session.title, se: session.se, ep: session.ep, playId: session.playId });
+    lastProgressSentRef.current = Date.now();
+    // Count real playing time only (paused/seeking/buffering are excluded).
+    watchTickRef.current = setInterval(() => {
+      const current = watchSessionRef.current;
+      const video = videoRef.current;
+      if (!current || !video) return;
+      if (!video.paused && !video.seeking && video.readyState >= 2) current.watchedMs += 1000;
+      if (video.duration && isFinite(video.duration) && video.duration > 0) {
+        current.percent = Math.min(100, (video.currentTime / video.duration) * 100);
+      }
+      if (Date.now() - lastProgressSentRef.current >= 60000) {
+        lastProgressSentRef.current = Date.now();
+        reportPlayProgress({
+          playId: current.playId,
+          mediaId: current.mediaId,
+          title: current.title,
+          se: current.se,
+          ep: current.ep,
+          watchedSeconds: Math.round(current.watchedMs / 1000),
+          percent: Math.round(current.percent || 0)
+        });
+      }
+    }, 1000);
+  };
+
+  // End the session when the player unmounts or switches to another title.
+  useEffect(() => () => { endWatchSession(); }, [media.id]);
 
   // Persistent subtitles: downloaded/imported tracks survive leaving the
   // player (and app restarts). Stored per title — and per episode for
@@ -1958,17 +2023,15 @@ const ISO_LANG_MAP = {
           setLoading(false);
           setStreamError(null);
           setIsPlaying(true);
-          // "What was watched": one anonymous report per title per 5 minutes.
-          reportPlay({
-            mediaId: media?.id || media?.subjectId,
-            title: media?.title,
-            se: media?.seasonNumber,
-            ep: media?.episodeNumber
-          });
+          beginWatchSession();
         }}
         onPause={() => {
           setIsPlaying(false);
           pauseTimestampRef.current = Date.now();
+        }}
+        onEnded={() => {
+          setIsPlaying(false);
+          endWatchSession();
         }}
         onError={() => {
           const code = videoRef.current?.error?.code;

@@ -105,7 +105,7 @@ function sendBatch(batch) {
  * Report that playback started for a title. Safe to call repeatedly — the same
  * title is ignored for 5 minutes so resume/seek does not spam.
  */
-export function reportPlay({ mediaId, title, se, ep }) {
+export function reportPlay({ mediaId, title, se, ep, playId }) {
   try {
     if (optedOut()) return;
     if (typeof window === 'undefined') return;
@@ -118,6 +118,7 @@ export function reportPlay({ mediaId, title, se, ep }) {
 
     const event = Object.assign({
       type: 'play',
+      playId: playId || undefined,
       mediaId: mediaId ? String(mediaId) : undefined,
       title: title ? String(title) : undefined,
       se: se === undefined || se === null ? undefined : Number(se),
@@ -127,11 +128,56 @@ export function reportPlay({ mediaId, title, se, ep }) {
       installId: getInstallId()
     }, appContext());
 
-    const queue = readQueue();
-    queue.push(event);
-    writeQueue(queue);
-    scheduleFlush();
+    queueEvent(event);
   } catch (e) { /* never break playback for activity reporting */ }
+}
+
+/** Periodic "still watching" ping — carries the running duration. */
+export function reportPlayProgress({ playId, mediaId, title, se, ep, watchedSeconds, percent }) {
+  try {
+    if (optedOut() || typeof window === 'undefined') return;
+    queueEvent(Object.assign({
+      type: 'play_progress',
+      playId: playId || undefined,
+      mediaId: mediaId ? String(mediaId) : undefined,
+      title: title ? String(title) : undefined,
+      se: se === undefined || se === null ? undefined : Number(se),
+      ep: ep === undefined || ep === null ? undefined : Number(ep),
+      watchedSeconds: Math.max(0, Math.round(Number(watchedSeconds) || 0)),
+      percent: Math.max(0, Math.min(100, Math.round(Number(percent) || 0))),
+      platform: platformName(),
+      device: describeDevice(),
+      installId: getInstallId()
+    }, appContext()));
+  } catch (e) { /* ignore */ }
+}
+
+/** Final event for one playback: what was watched and for how long. */
+export function reportPlayEnd({ playId, mediaId, title, se, ep, watchedSeconds, percent, completed }) {
+  try {
+    if (optedOut() || typeof window === 'undefined') return;
+    queueEvent(Object.assign({
+      type: 'play_end',
+      playId: playId || undefined,
+      mediaId: mediaId ? String(mediaId) : undefined,
+      title: title ? String(title) : undefined,
+      se: se === undefined || se === null ? undefined : Number(se),
+      ep: ep === undefined || ep === null ? undefined : Number(ep),
+      watchedSeconds: Math.max(0, Math.round(Number(watchedSeconds) || 0)),
+      percent: Math.max(0, Math.min(100, Math.round(Number(percent) || 0))),
+      completed: Boolean(completed),
+      platform: platformName(),
+      device: describeDevice(),
+      installId: getInstallId()
+    }, appContext()));
+  } catch (e) { /* ignore */ }
+}
+
+function queueEvent(event) {
+  const queue = readQueue();
+  queue.push(event);
+  writeQueue(queue);
+  scheduleFlush();
 }
 
 /**
