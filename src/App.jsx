@@ -19,7 +19,7 @@ import AppUpdateModal from './components/AppUpdateModal';
 import CuratorBento from './components/CuratorBento';
 import VikyFlixLogo from './components/VikyFlixLogo';
 import { decorateOnlineMovie, getItemRecency, isItemNew, cleanCatalogTitle, mapCatalogGenres } from './onlineLibrary';
-import { reportFailure } from './telemetry.js';
+import { reportFailure, getSupportCode } from './telemetry.js';
 import {
   Film,
   Tv,
@@ -1235,6 +1235,9 @@ function _isExcludedItemImpl(t) {
             <Film size={50} />
             <h3>Can't reach MovieFlix servers</h3>
             <p>The connection failed after several attempts. Check your internet and try again.</p>
+            <p style={{ opacity: 0.65, fontSize: '0.75rem', marginTop: '0.25rem' }}>
+              Support code: {getSupportCode()}
+            </p>
             <button className="hero-btn-primary" onClick={() => { fetchMovies(); fetchAdminStats(); }}>
               Retry Connection
             </button>

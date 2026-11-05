@@ -14,6 +14,7 @@ import { API_BASE, IS_NATIVE_APP } from './config.js';
 
 const QUEUE_KEY = 'vf_telq_v1';
 const SESSION_KEY = 'vf_tsess_v1';
+const INSTALL_KEY = 'vf_install_id';
 const MAX_QUEUE = 100;
 const BATCH = 20;
 const FLUSH_MS = 30000;
@@ -38,6 +39,36 @@ function getSessionId() {
     return s;
   } catch (e) {
     return 'anon';
+  }
+}
+
+/**
+ * Stable-but-anonymous per-install id (random, generated once, stored on the
+ * device). No account, name, phone number, email or IP is ever attached.
+ * It exists so the server can count "3 installs affected" instead of 30 events.
+ */
+function getInstallId() {
+  try {
+    let id = localStorage.getItem(INSTALL_KEY);
+    if (!id || !/^[A-Za-z0-9-]{8,64}$/.test(id)) {
+      id = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+        ? crypto.randomUUID()
+        : 'vf' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem(INSTALL_KEY, id);
+    }
+    return id;
+  } catch (e) {
+    return 'anon';
+  }
+}
+
+/** Short code a user can read to support, e.g. "VF-4A9C21" — not a password. */
+export function getSupportCode() {
+  try {
+    const tail = getInstallId().replace(/[^A-Za-z0-9]/g, '').slice(-6).toUpperCase();
+    return `VF-${tail || 'UNKNOWN'}`;
+  } catch (e) {
+    return 'VF-UNKNOWN';
   }
 }
 
@@ -105,6 +136,7 @@ export function reportFailure(fields) {
     const event = Object.assign({}, fields, {
       ts: new Date().toISOString(),
       sessionId,
+      installId: getInstallId(),
       platform: fields.platform || platformName()
     }, appContext());
     enqueue(event);
@@ -201,6 +233,7 @@ export function initTelemetry() {
     if (started || typeof window === 'undefined') return;
     started = true;
     sessionId = getSessionId();
+    try { window.__VF_SUPPORT_CODE = getSupportCode(); } catch (e) { /* ignore */ }
 
     window.addEventListener('error', (event) => {
       reportAppError('uncaught_error', event.message || 'unknown error', 'window');
