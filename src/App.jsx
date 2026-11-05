@@ -19,6 +19,7 @@ import AppUpdateModal from './components/AppUpdateModal';
 import CuratorBento from './components/CuratorBento';
 import VikyFlixLogo from './components/VikyFlixLogo';
 import { decorateOnlineMovie, getItemRecency, isItemNew, cleanCatalogTitle, mapCatalogGenres } from './onlineLibrary';
+import { reportFailure } from './telemetry.js';
 import {
   Film,
   Tv,
@@ -524,6 +525,7 @@ export default function App() {
           clearTimeout(timer);
           if (res.ok) {
             const data = await res.json();
+            window.__VF_APP_INFO = data;
             const serverCode = parseInt(data.versionCode, 10) || 0;
             let localCode = 0;
 
@@ -748,6 +750,13 @@ export default function App() {
       }
       return false;
     } finally {
+      if (!onlineTitlesRef.current.length) {
+        // No cache and every tier failed: the designed error screen was never
+        // reachable before (setLoadError was never called), and the failure
+        // monitor needs the signal before a user reports it.
+        setLoadError(true);
+        reportFailure({ cls: 'catalog_fetch_failed', kind: 'all_tiers_failed', route: '/api/moviebox/catalog' });
+      }
       catalogFetchInFlightRef.current = false;
     }
   }, []);

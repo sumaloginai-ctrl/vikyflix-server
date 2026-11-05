@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 
 import { API_BASE } from './config';
+import { reportPlayerError } from './telemetry.js';
 import { cleanCatalogTitle as cleanPlayTitle } from './onlineLibrary';
 import './styles/player.css';
 
@@ -943,6 +944,7 @@ export default function VideoPlayer({ movie, onClose }) {
               break;
             default:
               console.warn('[HLS] Fatal error, restarting stream...', data.details);
+              reportPlayerError({ kind: 'hls_fatal', code: data.details, detail: data.type, mediaId: media && media.id });
               hls.destroy();
               break;
           }
@@ -1963,6 +1965,7 @@ const ISO_LANG_MAP = {
         onError={() => {
           const code = videoRef.current?.error?.code;
           console.warn('[Player] Video error code:', code);
+          reportPlayerError({ kind: 'video_element', code, mediaId: media && media.id });
           // Try auto-recovery once before giving up
           const now = Date.now();
           if (now - lastAutoRecoverRef.current > 4000) {

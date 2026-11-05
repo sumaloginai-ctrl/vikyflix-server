@@ -7,6 +7,7 @@ import App from './App.jsx'
 import './styles/aurora.css'
 // Premium cinematic skin — loads LAST so it wins over everything above.
 import './styles/premium.css'
+import { initTelemetry, reportAppError } from './telemetry.js'
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -20,6 +21,7 @@ class ErrorBoundary extends Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('MovieFlix Render Error:', error, errorInfo);
+    reportAppError('render_crash', error && error.message, 'react_boundary');
   }
 
   render() {
@@ -62,6 +64,8 @@ class ErrorBoundary extends Component {
     return this.props.children;
   }
 }
+
+initTelemetry();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

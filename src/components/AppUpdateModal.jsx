@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Download, Sparkles, X, CheckCircle2, Loader2 } from 'lucide-react';
 import { Browser } from '@capacitor/browser';
+import { reportFailure } from '../telemetry.js';
 import '../styles/details.css';
 
 export default function AppUpdateModal({
@@ -12,10 +13,10 @@ export default function AppUpdateModal({
   const [updateMessage, setUpdateMessage] = useState('');
   const [updateError, setUpdateError] = useState('');
 
-  if (!updateInfo) return null;
-
   const pollRef = useRef(null);
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  if (!updateInfo) return null;
 
   // In the native app the update downloads INSIDE the app (as a real .apk
   // in the app cache — no browser, no chance of being renamed to .zip) and
@@ -64,6 +65,7 @@ export default function AppUpdateModal({
             clearInterval(pollRef.current); pollRef.current = null;
             setUpdateError('The download could not start. Please try again.');
             setIsUpdating(false);
+            reportFailure({ cls: 'update_download_failed', kind: 'could_not_start', code: 'idle', platform: 'android', src: 'update_modal' });
           } else if (st.startsWith('downloading:')) {
             const pct = parseInt(st.split(':')[1], 10) || 0;
             if (pct !== lastPct) { lastPct = pct; setUpdateMessage(`Downloading update… ${pct}%`); }
@@ -72,6 +74,7 @@ export default function AppUpdateModal({
             setIsUpdating(false);
             setDownloadSuccess(true);
             setUpdateMessage('One-time setup: allow MovieFlix to install apps in the screen that just opened, then tap Update again to install instantly.');
+            reportFailure({ cls: 'update_install_failed', kind: 'permission_required', code: 'permission', platform: 'android', src: 'update_modal' });
           } else if (st === 'ready' || st === 'installing') {
             clearInterval(pollRef.current); pollRef.current = null;
             setIsUpdating(false);
@@ -79,7 +82,9 @@ export default function AppUpdateModal({
             setUpdateMessage('Update downloaded. Confirm the installation in the Android installer that just opened.');
           } else if (st.startsWith('error:')) {
             clearInterval(pollRef.current); pollRef.current = null;
-            setUpdateError(st.slice('error:'.length) || 'Download failed. Please try again.');
+            const reason = st.slice('error:'.length) || 'Download failed. Please try again.';
+            reportFailure({ cls: 'update_download_failed', kind: 'native_error', code: 'native', detail: reason, src: 'update_modal' });
+            setUpdateError(reason);
             setUpdateMessage('');
             setIsUpdating(false);
             // The downloaded file is valid and sits in the app cache — if the
@@ -102,6 +107,7 @@ export default function AppUpdateModal({
       setUpdateMessage('The official APK was opened in your browser. Finish the download and confirm installation there.');
     } catch (err) {
       console.error('Update error:', err);
+      reportFailure({ cls: 'update_download_failed', kind: 'exception', code: 'client', detail: err && err.message, src: 'update_modal' });
       setUpdateError(err.message || 'Could not open the official update download.');
       setIsUpdating(false);
     }
