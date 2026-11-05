@@ -13,7 +13,7 @@
 
 services:
   - type: web
-    name: movieflix-server
+    name: vikyflix-server
     runtime: node
     plan: free            # free tier sleeps after ~15 idle min (~50s wake).
                           # Upgrade to starter for true 24/7 always-on.
