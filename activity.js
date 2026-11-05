@@ -20,7 +20,7 @@ const RETENTION_DAYS = Math.max(1, parseInt(process.env.ACTIVITY_RETENTION_DAYS 
 const MAX_BATCH = 50;
 const MAX_PER_MINUTE = 300;
 
-const TYPES = new Set(['play']);
+const TYPES = new Set(['play', 'app_open']);
 const FIELDS = ['type', 'installId', 'platform', 'appVersion', 'versionCode', 'mediaId', 'title', 'se', 'ep'];
 
 const rateBuckets = new Map();
@@ -78,7 +78,8 @@ function sanitizeEvent(raw) {
     }
     event[key] = cleanText(String(raw[key]), key === 'title' ? 140 : 120);
   }
-  if (!event.mediaId && !event.title) return null; // nothing usable
+  if (event.type === 'play' && !event.mediaId && !event.title) return null;
+  if (event.type === 'app_open' && !event.installId) return null; // launch must at least identify the install
   return event;
 }
 
