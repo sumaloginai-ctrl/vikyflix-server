@@ -198,7 +198,7 @@ function trackIncident(event) {
     stat.versions[version] = (stat.versions[version] || 0) + 1;
     if (event.installId) stat.installs[event.installId] = (stat.installs[event.installId] || 0) + 1;
     if (stat.samples.length < 3) {
-      stat.samples.push({ ts: event.ts, cls: event.cls, kind: event.kind, code: event.code, route: event.route, msg: event.msg, platform, appVersion: event.appVersion, mediaId: event.mediaId, installId: event.installId, src: event.src });
+      stat.samples.push({ ts: event.ts, cls: event.cls, kind: event.kind, code: event.code, route: event.route, msg: event.msg, detail: event.detail, platform, appVersion: event.appVersion, mediaId: event.mediaId, installId: event.installId, src: event.src });
     }
 
     const windowCount = stat.times.filter(t => now - t <= WINDOW_MS).length;

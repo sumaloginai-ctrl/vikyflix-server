@@ -136,6 +136,7 @@ function ingestLine(line, state, counters) {
       code: event.code || '',
       route: event.route || '',
       msg: event.msg || '',
+      detail: event.detail || '',
       platform,
       appVersion: event.appVersion,
       mediaId: event.mediaId,
