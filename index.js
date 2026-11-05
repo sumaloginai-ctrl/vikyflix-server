@@ -9,6 +9,7 @@ require('dotenv').config();
 const { pruneCache } = require('./transcoder');
 const { searchOnlineSubtitles, downloadAndConvertSubtitle, srtToVtt } = require('./subtitles');
 const { fetchMovieBoxCatalog, refreshLatestReleases, refreshLatestFeed, findMovieBoxItem, searchMovieBox, resolveMovieBoxStream, invalidateStreamCache, fetchSeriesSeasons, enrichCardEditions, enrichEditionSweep, getMovieBoxCatalogSnapshot, getMovieBoxCatalogMeta } = require('./moviebox');
+const telemetry = require('./telemetry');
 
 const compression = require('compression');
 
@@ -53,6 +54,10 @@ if (fs.existsSync(CACHE_DIR)) {
 app.use(compression());
 app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '10mb' }));
+
+// Failure telemetry intake (docs/telemetry.md). Always answers 204; the sink
+// never throws into a request and never stores PII, IPs or secrets.
+app.post('/api/telemetry/events', telemetry.handler);
 
 // High-speed local poster cache delivery with immutable 1-year browser cache
 // --- Poster variant queue (bounded concurrency, async) ---
@@ -249,6 +254,9 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Telemetry pipeline health for the failure-monitor role (admin-gated).
+app.get('/api/telemetry/status', requireAdmin, telemetry.statusHandler);
+
 // The local library was discontinued — these endpoints remain as empty
 // shells so older clients polling them get a clean, empty response.
 app.get('/api/movies', (req, res) => {
@@ -279,6 +287,7 @@ app.get('/api/moviebox/catalog', async (req, res) => {
     res.json(catalog);
   } catch (err) {
     console.error('[MovieBox] Catalog error:', err.message);
+    telemetry.emit('catalog_fetch_failed', { kind: 'fetch_error', route: '/api/moviebox/catalog', detail: err.message });
     res.status(500).json({ error: 'Failed to fetch MovieBox catalog', message: err.message });
   }
 });
@@ -290,6 +299,7 @@ app.get('/api/moviebox/search', async (req, res) => {
     res.json({ query: q, total: results.length, results });
   } catch (err) {
     console.error('[MovieBox] Search error:', err.message);
+    telemetry.emit('api_error', { kind: 'search_error', route: '/api/moviebox/search', code: '500', detail: err.message });
     res.status(500).json({ error: 'Search failed', message: err.message });
   }
 });
@@ -684,6 +694,7 @@ app.get('/api/moviebox/stream/:id', async (req, res) => {
       resolved = await resolveMovieBoxStream(target.subjectId, target.detailPath, seParam, epParam, req.query.res);
     } catch (e) {
       console.warn(`[MovieBox] Stream resolve failed for ${movie.title}:`, e.message);
+      telemetry.emit('stream_resolve_failed', { mediaId: req.params.id, kind: 'resolve_error', detail: e.message });
       if (movie.videoUrl) {
         resolved = { url: movie.videoUrl, resolution: 'trailer' };
       } else {
@@ -728,6 +739,7 @@ app.get('/api/moviebox/stream/:id', async (req, res) => {
           return res.status(502).json({ error: `Upstream responded ${upstream.status}` });
         }
       } else {
+        telemetry.emit('proxy_upstream_error', { mediaId: req.params.id, kind: 'upstream_status', code: String(upstream.status), route: '/api/moviebox/stream', detail: `upstream ${upstream.status}` });
         return res.status(upstream.status >= 500 ? 502 : upstream.status).json({ error: `Upstream responded ${upstream.status}` });
       }
     }
@@ -754,6 +766,7 @@ app.get('/api/moviebox/stream/:id', async (req, res) => {
     req.on('close', () => nodeStream.destroy());
   } catch (err) {
     console.error('[MovieBox] Stream proxy error:', err.message);
+    telemetry.emit('proxy_upstream_error', { mediaId: req.params.id, kind: 'fetch_error', route: '/api/moviebox/stream', detail: err.message });
     if (!res.headersSent) res.status(502).json({ error: 'Stream fetch failed', message: err.message });
   }
 });
@@ -772,6 +785,7 @@ app.get('/api/movies/:id/subtitles/online', async (req, res) => {
     const subtitles = await searchOnlineSubtitles(queryTitle, queryYear);
     res.json({ subtitles });
   } catch (err) {
+    telemetry.emit('subtitle_failed', { mediaId: req.params.id, kind: 'search_error', route: '/api/movies/:id/subtitles/online', detail: err.message });
     res.status(500).json({ error: 'Failed to search subtitles', details: err.message });
   }
 });
@@ -799,6 +813,7 @@ app.post('/api/movies/:id/subtitles/download', async (req, res) => {
       name: name || `${lang} Subtitle`
     });
   } catch (err) {
+    telemetry.emit('subtitle_failed', { mediaId: req.params.id, kind: 'download_error', route: '/api/movies/:id/subtitles/download', detail: err.message });
     res.status(500).json({ error: 'Failed to download subtitle', details: err.message });
   }
 });
@@ -828,6 +843,7 @@ app.post('/api/movies/:id/subtitles/upload', (req, res) => {
       label: label || filename || 'Imported Subtitle'
     });
   } catch (err) {
+    telemetry.emit('subtitle_failed', { mediaId: req.params.id, kind: 'upload_error', route: '/api/movies/:id/subtitles/upload', detail: err.message });
     res.status(500).json({ error: 'Failed to process custom subtitle', details: err.message });
   }
 });
@@ -863,10 +879,12 @@ if (fs.existsSync(WEB_DIST)) {
 
 process.on('uncaughtException', (err) => {
   console.error('[Server] Uncaught exception:', err?.message || err);
+  telemetry.emit('app_error', { kind: 'uncaught_exception', src: 'server', detail: err?.message || String(err) });
 });
 
 process.on('unhandledRejection', (reason) => {
   console.error('[Server] Unhandled rejection:', reason?.message || reason);
+  telemetry.emit('app_error', { kind: 'unhandled_rejection', src: 'server', detail: reason?.message || String(reason) });
 });
 
 app.listen(PORT, '0.0.0.0', () => {

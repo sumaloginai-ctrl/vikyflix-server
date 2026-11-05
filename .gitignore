@@ -1,5 +1,7 @@
 node_modules/
 *.log
+logs/
+logs-test/
 cloudflared.exe
 *.bat
 *.vbs
