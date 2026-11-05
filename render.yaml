@@ -1,0 +1,34 @@
+# Render.com Blueprint — MovieFlix always-on cloud server.
+#
+# Deploy: push this repo to GitHub, then on https://dashboard.render.com
+# choose "New +" → "Blueprint" and select the repo. Render reads this file.
+#
+# What this instance is:
+#   - The MovieBox catalog, playback proxy, subtitles and OTA update APIs.
+#   - 100% PC-independent: no local media scanning (MEDIA_DIRS empty).
+#
+# What it is NOT:
+#   - It does not serve the personal local library (discontinued feature).
+#   - It does not run the Cloudflare tunnel — Render gives it a public URL.
+
+services:
+  - type: web
+    name: movieflix-server
+    runtime: node
+    plan: free            # free tier sleeps after ~15 idle min (~50s wake).
+                          # Upgrade to starter for true 24/7 always-on.
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/app/version
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # No local media on the cloud — keep the scanner off entirely.
+      - key: MEDIA_DIRS
+        value: ""
+      # Admin key for the control endpoints (rescan/refresh). Change this!
+      - key: ADMIN_KEY
+        sync: false
+      # Port is injected by Render automatically.
+      - key: PORT
+        value: 10000
