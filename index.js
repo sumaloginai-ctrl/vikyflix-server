@@ -830,7 +830,7 @@ app.post('/api/movies/:id/subtitles/upload', (req, res) => {
 
     const subHash = crypto.createHash('md5').update(text).digest('hex').substring(0, 10);
     const vttFilename = `custom_${subHash}.vtt`;
-    const targetVttPath = path.join(CACHE_DIR, movie.id, vttFilename);
+    const targetVttPath = path.join(CACHE_DIR, req.params.id, vttFilename);
 
     const dir = path.dirname(targetVttPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -839,7 +839,7 @@ app.post('/api/movies/:id/subtitles/upload', (req, res) => {
 
     res.json({
       success: true,
-      vttUrl: `/api/movies/${movie.id}/subtitles/custom/${vttFilename}`,
+      vttUrl: `/api/movies/${req.params.id}/subtitles/custom/${vttFilename}`,
       label: label || filename || 'Imported Subtitle'
     });
   } catch (err) {
