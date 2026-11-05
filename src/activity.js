@@ -43,9 +43,18 @@ function platformName() {
 
 function appContext() {
   const info = (typeof window !== 'undefined' && window.__VF_APP_INFO) || {};
+  let versionName = info.versionName;
+  let versionCode = info.versionCode;
+  // The launch heartbeat can fire before the version manifest loads; read the
+  // installed APK version straight from the Android bridge as a fallback.
+  try {
+    const bridge = typeof window !== 'undefined' ? window.AndroidStreamBridge : null;
+    if (!versionName && bridge && typeof bridge.getAppVersionName === 'function') versionName = bridge.getAppVersionName();
+    if (!versionCode && bridge && typeof bridge.getAppVersionCode === 'function') versionCode = bridge.getAppVersionCode();
+  } catch (e) { /* bridge unavailable on web */ }
   return {
-    appVersion: info.versionName || undefined,
-    versionCode: info.versionCode || undefined
+    appVersion: versionName || undefined,
+    versionCode: versionCode || undefined
   };
 }
 
